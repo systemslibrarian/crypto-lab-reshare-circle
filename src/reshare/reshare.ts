@@ -405,14 +405,31 @@ export async function runMobileAdversary(
     }
   }
 
+  // The attacker's best move: a single epoch that yielded >= t shares is a
+  // clean quorum on one polynomial — interpolate just that. Otherwise the
+  // loot has no usable subset and interpolating all of it is as good (bad)
+  // as anything.
+  const byEpoch = new Map<number, AdversaryRun['collected']>();
+  for (const c of collected) {
+    const group = byEpoch.get(c.epoch) ?? [];
+    group.push(c);
+    byEpoch.set(c.epoch, group);
+  }
+  let bestGroup: AdversaryRun['collected'] | null = null;
+  for (const group of byEpoch.values()) {
+    if (group.length >= t && (!bestGroup || group.length > bestGroup.length)) bestGroup = group;
+  }
+  const used = bestGroup ?? collected;
+
   const reconstructed = reconstruct(
-    collected.map((c) => ({ x: BigInt(c.party + 1), y: c.value })),
+    used.map((c) => ({ x: BigInt(c.party + 1), y: c.value })),
   );
   return {
     reshareOn,
     totalEpochs,
     steals,
     collected,
+    used,
     reconstructed,
     matchesPublicKey: matchesPublicKey(reconstructed, y),
     publicKey: y,

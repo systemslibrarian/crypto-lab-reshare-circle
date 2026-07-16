@@ -25,8 +25,8 @@ The primitives are real and **consumed from sibling labs, not reimplemented**:
 ## Exhibits
 
 1. **Turn the epoch** — the headline. One click runs a full verified HJKY refresh in the real 2048-bit group: 5 zero-commitment checks (D₀ = 1), 25 Feldman sub-share checks, then a side-by-side proof that every share changed while the reconstructed secret is byte-identical and the public key never moved. The full dealing matrix is one `<details>` away.
-2. **The whole trick** — a 4-step walkthrough of *why* a polynomial pinned to zero at x = 0 changes every share and no secret, over the labelled small field GF(1019) (2-of-3, re-rollable numbers), ending with the mixed-epoch interpolation landing on deterministic garbage.
-3. **The mobile adversary** — steal A's share in epoch 1, B's in epoch 3, C's in epoch 5; run the five epochs with and without resharing. Without: the loot interpolates to the private scalar and **g^v = Y says MATCH — rendered as BREACH**, because the verdict and the math are separate indicators. With: the same thefts interpolate to noise.
+2. **The whole trick** — a 4-step animated walkthrough of *why* a polynomial pinned to zero at x = 0 changes every share and no secret, over the labelled small field GF(1019) (2-of-3, re-rollable numbers). An honest plot draws the share points, the update polynomial visibly pinned to the origin, every point's +Δ(x) jump with x = 0 unmoved, and finally the mixed-epoch chord landing on deterministic garbage; the table beside it carries the same numbers.
+3. **The mobile adversary** — plan the theft campaign yourself in a custodian × epoch grid (default: A@1, B@3, C@5), then run five epochs with and without resharing. Without: the loot interpolates to the private scalar and **g^v = Y says MATCH — rendered as BREACH**, because the verdict and the math are separate indicators. With: the same thefts interpolate to noise. The attacker plays its best subset — so putting all three thefts inside one epoch defeats resharing, and the demo says so honestly instead of pretending otherwise.
 4. **Break it yourself** — a checkbox grid of every share from every epoch this page has produced. Pick any three, hit reconstruct: real Lagrange, real public-key check, no guard rails. Mixed epochs give REJECT with no alarm needed; a same-epoch quorum recovers by design; duplicate custodians fail closed with the division-by-zero explanation.
 5. **The dealer who lies** — make party C deal δ(0) = 7 instead of 0. Its sub-shares all pass the Feldman check (they honestly match the committed polynomial!) and only the D₀ = 1 check catches the lie. The "if nobody checked" counterfactual is computed, not asserted: the secret shifts by exactly +7 and the public key silently becomes Y·g⁷ — the forged-but-accepted ALARM state.
 6. **Rotate the committee** — redistribute 3-of-5 into 4-of-7: a quorum of three old custodians deal their *shares* (never the secret) into fresh degree-3 polynomials; the new seven verify each D₀ against the old public commitments and combine with public Lagrange weights. Same secret, same Y, new people, new threshold.
@@ -66,7 +66,7 @@ git clone https://github.com/systemslibrarian/crypto-lab-reshare-circle.git
 cd crypto-lab-reshare-circle
 npm install
 npm run dev        # dev server
-npm test           # 30 unit tests incl. KATs (Vitest)
+npm test           # 33 unit tests incl. KATs (Vitest)
 npm run build      # typecheck + production build
 npm run test:a11y  # axe-core WCAG 2.1 A/AA gate, both themes (Playwright)
 ```
@@ -80,7 +80,7 @@ npm run test:a11y  # axe-core WCAG 2.1 A/AA gate, both themes (Playwright)
 
 ## Build & Verify
 
-- **30 unit tests, all passing** (`npm test`): `src/reuse/reuse.test.ts` (11) pins the consumed modules with KATs — Shamir vectors from shamir-gate's own suite, RFC 3526 group-14 vectors (2048-bit safe prime, Fermat checks, subgroup order) from vss-gate's — and `src/reshare/reshare.test.ts` (19) covers every-subset round-trips, refresh invariants (secret/Y preserved, all shares changed, new shares verify), a fully hand-computed reshare KAT over GF(1019) (shares 47/52/57 → 61/80/99, mixed-epoch garbage exactly 14), exact cheat consequences (+c and Y·g^c), fail-closed duplicate-x and unverified-dealing paths, membership change, and both mobile-adversary outcomes.
+- **33 unit tests, all passing** (`npm test`): `src/reuse/reuse.test.ts` (11) pins the consumed modules with KATs — Shamir vectors from shamir-gate's own suite, RFC 3526 group-14 vectors (2048-bit safe prime, Fermat checks, subgroup order) from vss-gate's — and `src/reshare/reshare.test.ts` (22) covers every-subset round-trips, refresh invariants (secret/Y preserved, all shares changed, new shares verify), a fully hand-computed reshare KAT over GF(1019) (shares 47/52/57 → 61/80/99, mixed-epoch garbage exactly 14), exact cheat consequences (+c and Y·g^c), fail-closed duplicate-x and unverified-dealing paths, membership change, and the mobile adversary in all four honesty-critical regimes: cross-epoch thefts with and without resharing, a within-one-epoch quorum that resharing provably cannot stop, best-subset attacker play, and below-threshold futility.
 - **Accessibility is gated in CI**: `npm run build && npm run test:a11y` scans the production build with axe-core (WCAG 2.1 A/AA) in both themes after driving every exhibit, and the GitHub Pages deploy is blocked on failure.
 
 ## Performance

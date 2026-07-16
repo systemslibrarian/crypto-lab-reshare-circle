@@ -1,30 +1,34 @@
 /**
- * Exhibit 3 — the mobile adversary. The same three thefts, run twice against
- * real crypto: once against a committee that never reshares, once against one
- * that reshares every epoch. The cryptographic result (does g^v equal Y?) and
- * the security verdict are rendered as SEPARATE indicators — the point of the
- * lab is the run where the math says MATCH and the verdict screams BREACH.
+ * Exhibit 3 — the mobile adversary. The learner picks the theft pattern, then
+ * runs the five epochs twice against real crypto: once with a committee that
+ * never reshares, once with one that reshares every epoch. The cryptographic
+ * result (does g^v equal Y?) and the security verdict are SEPARATE indicators
+ * — the point of the lab is the run where the math says MATCH and the verdict
+ * screams BREACH. And the honest edge is playable: put all three thefts
+ * inside one epoch and resharing does not save you.
  */
 import { PARTY_LABELS, runMobileAdversary } from '../reshare/reshare';
 import type { AdversaryRun, Steal } from '../reshare/types';
 import { chip, el, paint, truncHex } from './dom';
 
-const STEALS: Steal[] = [
-  { epoch: 1, party: 0 },
-  { epoch: 3, party: 1 },
-  { epoch: 5, party: 2 },
-];
 const EPOCHS = 5;
+const PARTIES = 5;
+const T = 3;
+const DEFAULT_STEALS = new Set(['0:1', '1:3', '2:5']); // A@1, B@3, C@5
+
+function stealLabel(s: Steal): string {
+  return `${PARTY_LABELS[s.party]}@${s.epoch}`;
+}
 
 function renderRun(run: AdversaryRun): HTMLElement[] {
   const timeline = el('ol', { class: 'timeline' }, []);
   for (let e = 1; e <= EPOCHS; e++) {
     const items: Array<Node | string> = [el('strong', { text: `Epoch ${e}` })];
-    const steal = STEALS.find((s) => s.epoch === e);
-    if (steal) {
+    const thefts = run.steals.filter((s) => s.epoch === e);
+    if (thefts.length > 0) {
       items.push(
         el('span', { class: 'steal-note' }, [
-          ` — attacker copies ${PARTY_LABELS[steal.party]}’s current share`,
+          ` — attacker copies ${thefts.map((s) => `${PARTY_LABELS[s.party]}’s`).join(' and ')} current share${thefts.length > 1 ? 's' : ''}`,
         ]),
       );
     }
@@ -47,11 +51,47 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
     ]),
   ));
 
+  const epochsUsed = new Set(run.used.map((c) => c.epoch));
+  const subsetNote =
+    run.used.length !== run.collected.length
+      ? el('p', { class: 'note' }, [
+          el('strong', { text: 'The attacker plays its best move: ' }),
+          `it interpolates only ${run.used.map((c) => `${PARTY_LABELS[c.party]}@${c.epoch}`).join(', ')} — a full quorum inside one epoch beats everything else it holds.`,
+        ])
+      : el('span', {});
+
+  let verdict: HTMLElement;
+  let explain: string;
+  if (run.matchesPublicKey) {
+    if (run.reshareOn) {
+      verdict = chip('alarm', '✗', `BREACH — ${run.used.length} thefts landed inside epoch ${[...epochsUsed][0]}`);
+      explain =
+        'The honest limit, computed: resharing resets the clock BETWEEN epochs. It cannot beat a quorum assembled within one epoch — those shares all lie on that epoch’s single polynomial, and refreshing afterwards revokes nothing that already happened.';
+    } else {
+      verdict = chip('alarm', '✗', 'BREACH — patient, never-simultaneous thefts defeated the threshold');
+      explain =
+        'The shares never changed, so shares stolen years apart still lie on one polynomial — to the algebra, years apart is the same as one night.';
+    }
+  } else if (run.used.length < T) {
+    verdict = chip('ok', '✓', `HELD — only ${run.used.length} share${run.used.length === 1 ? '' : 's'}: below the threshold of ${T}`);
+    explain =
+      'Below the threshold nothing reconstructs, reshared or not — that guarantee is plain Shamir (see shamir-gate). Resharing exists for the attacker patient enough to reach t.';
+  } else {
+    verdict = chip('ok', '✓', 'HELD — the thefts span epochs; the collection is worthless');
+    explain =
+      `The loot spans epochs ${[...epochsUsed].sort((a, b) => a - b).join(', ')} and no single epoch reached the threshold — points from different polynomials that agree nowhere the attacker can use. Not “revoked”, not “detected”: just algebraically unrelated to the secret.`;
+  }
+
   return [
+    el('p', { class: 'note' }, [
+      el('strong', { text: 'Thefts: ' }),
+      run.steals.map(stealLabel).join(' · '),
+    ]),
     timeline,
-    el('h4', { text: 'The attacker’s loot (3 shares, t = 3)' }),
+    el('h4', { text: `The attacker’s loot (${run.collected.length} share${run.collected.length === 1 ? '' : 's'}, t = ${T})` }),
     loot,
-    el('h4', { text: 'The attacker interpolates the loot at x = 0' }),
+    subsetNote,
+    el('h4', { text: 'The attacker interpolates at x = 0' }),
     el('p', {}, [el('code', { class: 'inline-hex', text: truncHex(run.reconstructed) })]),
     el('div', { class: 'verdict-pair' }, [
       el('div', { class: 'chip-slot' }, [
@@ -64,13 +104,9 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
             : 'g^v ≠ Y — NO MATCH: the interpolated value is unrelated to s',
         ),
       ]),
-      el('div', { class: 'chip-slot' }, [
-        el('h4', { text: 'Security verdict' }),
-        run.matchesPublicKey
-          ? chip('alarm', '✗', 'BREACH — three patient, never-simultaneous thefts defeated the 3-of-5 threshold')
-          : chip('ok', '✓', 'HELD — three shares from three different sharings; the collection is worthless'),
-      ]),
+      el('div', { class: 'chip-slot' }, [el('h4', { text: 'Security verdict' }), verdict]),
     ]),
+    el('p', { class: 'note', text: explain }),
   ];
 }
 
@@ -97,23 +133,73 @@ export function adversaryPanel(): HTMLElement {
     el('p', { class: 'note', text: 'Not run yet.' }),
   ]);
 
+  // The theft planner: one checkbox per (custodian, epoch).
+  const grid = el('div', { class: 'tablewrap', tabindex: '0', role: 'region', 'aria-label': 'Theft planner: choose which shares the attacker copies, and when' }, [
+    el('table', { class: 'data-table' }, [
+      el('caption', { class: 'sr-only', text: 'Pick the epochs in which the attacker copies each custodian’s share' }),
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { scope: 'col', text: 'Custodian' }),
+          ...Array.from({ length: EPOCHS }, (_, e) => el('th', { scope: 'col', text: `Epoch ${e + 1}` })),
+        ]),
+      ]),
+      el('tbody', {}, Array.from({ length: PARTIES }, (_, p) =>
+        el('tr', {}, [
+          el('th', { scope: 'row', text: PARTY_LABELS[p] }),
+          ...Array.from({ length: EPOCHS }, (_, e) => {
+            const id = `steal-${p}-${e + 1}`;
+            const box = el('input', {
+              type: 'checkbox',
+              id,
+              'data-party': String(p),
+              'data-epoch': String(e + 1),
+              'aria-label': `Attacker copies ${PARTY_LABELS[p]}’s share in epoch ${e + 1}`,
+            });
+            if (DEFAULT_STEALS.has(`${p}:${e + 1}`)) box.checked = true;
+            return el('td', {}, [el('span', { class: 'pick-cell' }, [box])]);
+          }),
+        ]),
+      )),
+    ]),
+  ]);
+
+  function plannedSteals(): { steals: Steal[]; dropped: number } {
+    const raw = Array.from(grid.querySelectorAll<HTMLInputElement>('input:checked'))
+      .map((box) => ({ party: Number(box.dataset.party), epoch: Number(box.dataset.epoch) }))
+      .sort((a, b) => a.epoch - b.epoch);
+    // A realistic attacker keeps one copy per custodian — the newest. (Two
+    // copies of the same custodian share an x-coordinate and add nothing.)
+    const byParty = new Map<number, Steal>();
+    for (const s of raw) byParty.set(s.party, s);
+    return { steals: [...byParty.values()], dropped: raw.length - byParty.size };
+  }
+
   async function run(on: boolean): Promise<void> {
+    const { steals, dropped } = plannedSteals();
+    if (steals.length === 0) {
+      status.textContent = 'Plan at least one theft in the grid above.';
+      return;
+    }
     offBtn.disabled = true;
     onBtn.disabled = true;
-    status.textContent = on
-      ? 'Running 5 epochs with a full reshare between each — real dealings, real 2048-bit group…'
-      : 'Running 5 epochs with the shares left alone…';
+    status.textContent =
+      (dropped > 0
+        ? `Note: ${dropped} duplicate theft${dropped > 1 ? 's' : ''} of the same custodian dropped — the attacker keeps only the newest copy. `
+        : '') +
+      (on
+        ? `Running 5 epochs with a full reshare between each (thefts: ${steals.map(stealLabel).join(', ')}) — real dealings, real 2048-bit group…`
+        : `Running 5 epochs with the shares left alone (thefts: ${steals.map(stealLabel).join(', ')})…`);
     await paint();
     try {
-      const result = await runMobileAdversary(on, STEALS, EPOCHS);
+      const result = await runMobileAdversary(on, steals, EPOCHS);
       const slot = on ? onSlot : offSlot;
       slot.replaceChildren(
         el('h3', { text: on ? 'With resharing every epoch' : 'Without resharing' }),
         ...renderRun(result),
       );
-      status.textContent = on
-        ? 'Done. Same thefts, same threshold — but each stolen share came from a different polynomial, so the loot interpolates to noise.'
-        : 'Done. The shares never changed, so shares stolen years apart still lie on one polynomial — and t of them are the key.';
+      status.textContent = result.matchesPublicKey
+        ? 'Done — the attacker holds the private scalar. Verdict and reasons in the card below.'
+        : 'Done — the loot interpolates to noise. Verdict and reasons in the card below.';
     } finally {
       offBtn.disabled = false;
       onBtn.disabled = false;
@@ -126,9 +212,13 @@ export function adversaryPanel(): HTMLElement {
   return el('section', { class: 'panel', 'aria-labelledby': 'adv-h' }, [
     el('h2', { id: 'adv-h', text: '3 · The mobile adversary — why resharing exists' }),
     el('p', { class: 'panel-lede' }, [
-      'A 3-of-5 threshold does not have to be beaten in one night. This attacker compromises custodian A in epoch 1, B in epoch 3, C in epoch 5 — ',
-      el('strong', { text: 'never holding more than one custodian at a time' }),
-      ', always below the threshold. Each run below uses a fresh committee and a fresh secret; run both and compare.',
+      'A 3-of-5 threshold does not have to be beaten in one night. Plan the campaign yourself: the default steals A in epoch 1, B in epoch 3, C in epoch 5 — ',
+      el('strong', { text: 'never more than one custodian at a time' }),
+      ', always below the threshold. Then run the same plan against both worlds. Each run uses a fresh committee and secret.',
+    ]),
+    grid,
+    el('p', { class: 'note' }, [
+      'Worth trying: three thefts inside one epoch (resharing loses — and the demo will say so honestly); only two thefts (plain Shamir already wins); the same custodian in every epoch (the attacker learns nothing new).',
     ]),
     el('div', { class: 'controls' }, [offBtn, onBtn]),
     status,
@@ -140,7 +230,7 @@ export function adversaryPanel(): HTMLElement {
       el('a', { href: 'https://systemslibrarian.github.io/crypto-lab-threshold-decrypt/', text: 'threshold-decrypt' }),
       ' and ',
       el('a', { href: 'https://systemslibrarian.github.io/crypto-lab-frost-threshold/', text: 'frost-threshold' }),
-      '). Two limits to be honest about: resharing resets the clock but cannot undo a breach that reaches t shares within a single epoch, and the guarantee assumes compromised custodians’ old shares are genuinely erased at each refresh.',
+      '). And the guarantee’s fine print: it assumes compromised custodians’ old shares are genuinely erased at each refresh — an attacker who can stop the erasure has stopped the defense.',
     ]),
   ]);
 }

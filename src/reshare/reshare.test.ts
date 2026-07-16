@@ -261,7 +261,44 @@ describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => 
   it('WITH resharing: the same three thefts interpolate to garbage — g^result does not match Y', async () => {
     const run = await runMobileAdversary(true, steals, 5);
     expect(run.collected).toHaveLength(3);
+    expect(run.used).toHaveLength(3); // no single epoch reached t: all loot used
     expect(run.reconstructed).not.toBe(run.secret);
     expect(run.matchesPublicKey).toBe(false);
+  });
+
+  it('HONEST LIMIT: with resharing ON but all three thefts inside one epoch, the key is still recovered', async () => {
+    const sameEpoch = [
+      { epoch: 2, party: 0 },
+      { epoch: 2, party: 1 },
+      { epoch: 2, party: 2 },
+    ];
+    const run = await runMobileAdversary(true, sameEpoch, 5);
+    // Resharing resets the clock BETWEEN epochs; it cannot beat a quorum
+    // assembled within one. The demo's UI states this — this test proves it.
+    expect(run.reconstructed).toBe(run.secret);
+    expect(run.matchesPublicKey).toBe(true);
+  });
+
+  it('the attacker plays its best subset: a full same-epoch quorum wins even with extra cross-epoch loot', async () => {
+    const mixedPlan = [
+      { epoch: 1, party: 3 }, // stray early theft, different polynomial
+      { epoch: 4, party: 0 },
+      { epoch: 4, party: 1 },
+      { epoch: 4, party: 2 }, // epoch 4 alone reaches t = 3
+    ];
+    const run = await runMobileAdversary(true, mixedPlan, 5);
+    expect(run.collected).toHaveLength(4);
+    expect(run.used).toHaveLength(3);
+    expect(run.used.every((c) => c.epoch === 4)).toBe(true);
+    expect(run.matchesPublicKey).toBe(true);
+  });
+
+  it('two thefts stay below the threshold: never recovered, even without resharing', async () => {
+    const run = await runMobileAdversary(false, [
+      { epoch: 1, party: 0 },
+      { epoch: 4, party: 1 },
+    ], 5);
+    expect(run.matchesPublicKey).toBe(false);
+    expect(run.reconstructed).not.toBe(run.secret);
   });
 });

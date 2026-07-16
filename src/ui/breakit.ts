@@ -48,7 +48,7 @@ export function breakitPanel(session: Session): HTMLElement {
           el('thead', {}, [
             el('tr', {}, [
               el('th', { scope: 'col', text: 'Custodian' }),
-              ...epochs.map((e) => el('th', { scope: 'col', text: `Epoch ${e.epoch}` })),
+              ...epochs.map((e) => el('th', { scope: 'col', text: `Epoch ${e.epoch} · polynomial #${e.epoch}` })),
             ]),
           ]),
           el('tbody', {}, PARTY_LABELS.slice(0, latest(session).n).map((label, j) =>

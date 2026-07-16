@@ -8,11 +8,14 @@ import {
   G,
   P,
   PARTY_LABELS,
+  applyReshare,
   commitmentEval,
+  dealZeroUpdate,
   publicKey,
   reconstruct,
-  refreshEpoch,
+  verifyDealing,
 } from '../reshare/reshare';
+import type { DealingVerdict, ZeroDealing } from '../reshare/types';
 import { modPow } from '../reuse/vss';
 import { chip, el, fullHex, hexRow, paint, truncHex } from './dom';
 import { latest, pushEpoch, type Session } from './state';
@@ -56,10 +59,27 @@ export function circlePanel(session: Session): HTMLElement {
     void (async () => {
       btn.disabled = true;
       const prev = latest(session);
-      status.textContent = `Epoch ${prev.epoch} → ${prev.epoch + 1}: each of the 5 parties deals a zero-constant update; running 5 zero-commitment checks and 25 Feldman sub-share checks in the real 2048-bit group…`;
-      await paint();
       try {
-        const { next, dealings, verdicts } = await refreshEpoch(prev);
+        // Narrate the protocol's three phases while the real 2048-bit
+        // arithmetic runs — the wait IS the protocol, so show its shape.
+        const dealings: ZeroDealing[] = [];
+        for (let i = 0; i < prev.n; i++) {
+          status.textContent = `Phase 1 of 3 — dealing (${i + 1}/${prev.n}): ${PARTY_LABELS[i]} draws a random degree-${prev.t - 1} polynomial with δ(0) = 0, commits to it, and prepares one private sub-share per custodian…`;
+          await paint();
+          dealings.push(await dealZeroUpdate(i, prev.t, prev.n));
+        }
+        const verdicts: DealingVerdict[] = [];
+        for (let i = 0; i < dealings.length; i++) {
+          status.textContent = `Phase 2 of 3 — verifying (${i + 1}/${prev.n}): everyone checks ${PARTY_LABELS[i]}’s D₀ = 1, and each custodian Feldman-checks its sub-share against ${PARTY_LABELS[i]}’s commitments…`;
+          await paint();
+          verdicts.push(verifyDealing(dealings[i], prev.n));
+        }
+        status.textContent = 'Phase 3 of 3 — applying: each custodian adds its five sub-shares mod q; the public commitments fold as C′ₖ = Cₖ·∏Dₖ…';
+        await paint();
+        // Verified one dealer at a time just above (with the verdicts shown
+        // below); skip applyReshare's redundant re-verification pass.
+        if (!verdicts.every((v) => v.ok)) throw new Error('a dealing failed verification');
+        const next = applyReshare(prev, dealings, { forceUnverified: true });
 
         const zeroOk = verdicts.filter((v) => v.zeroCommitmentOk).length;
         const subOk = verdicts.reduce((acc, v) => acc + v.subShareOk.filter(Boolean).length, 0);

@@ -197,6 +197,21 @@ body {
   background-color: color-mix(in srgb, #ef4444 10%, transparent);
 }
 
+/* ---- Mechanism plot ---- */
+.mech-plot {
+  max-width: 42rem;
+  margin: 0.8rem 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  background-color: var(--surface-2);
+}
+.mech-plot svg { display: block; }
+.mech-plot g[data-step] { transition: opacity 0.4s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .mech-plot g[data-step] { transition: none; }
+}
+
 /* ---- Mechanism (small-field) table ---- */
 .mech-table .seat-zero {
   border-left: 2px dashed var(--accent-text);

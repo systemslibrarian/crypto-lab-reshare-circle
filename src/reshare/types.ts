@@ -73,7 +73,13 @@ export interface AdversaryRun {
   steals: Steal[];
   /** the loot: for each steal, the share value the attacker walked away with */
   collected: Array<{ epoch: number; party: number; value: bigint }>;
-  /** Lagrange interpolation of the loot at x = 0 */
+  /**
+   * What the attacker actually feeds the interpolator — their best move: if
+   * any single epoch yielded >= t shares, that group alone; otherwise all of
+   * the loot (which then spans epochs).
+   */
+  used: Array<{ epoch: number; party: number; value: bigint }>;
+  /** Lagrange interpolation of `used` at x = 0 */
   reconstructed: bigint;
   /** g^reconstructed === Y — the cryptographic result, not the verdict */
   matchesPublicKey: boolean;
