@@ -80,10 +80,19 @@ export async function randomBigInt(min: bigint, max: bigint): Promise<bigint> {
 }
 
 /**
- * Well-known safe primes for demo purposes.
+ * Well-known primes that define the finite field GF(p) used for demos.
+ *
+ * These are ordinary primes, not "safe primes" in the p = 2q + 1 sense (none of
+ * them satisfy it). Shamir secret sharing over GF(p) does not need one: it needs
+ * only a prime modulus larger than the secret and larger than the number of
+ * shares, so every non-zero element is invertible and Lagrange interpolation is
+ * exact. Safe primes matter for discrete-log groups (Diffie-Hellman, ElGamal),
+ * where a large prime-order subgroup resists small-subgroup attacks — that is a
+ * different setting from this one.
+ *
  * choosePrime returns the smallest prime in the list that is > minValue.
  */
-const SAFE_PRIMES: bigint[] = [
+const FIELD_PRIMES: bigint[] = [
   257n,
   509n,
   1021n,
@@ -98,7 +107,7 @@ const SAFE_PRIMES: bigint[] = [
 ];
 
 export function choosePrime(minValue: bigint): bigint {
-  for (const p of SAFE_PRIMES) {
+  for (const p of FIELD_PRIMES) {
     if (p > minValue) return p;
   }
   throw new Error(`No suitable prime found for value > ${minValue}`);
