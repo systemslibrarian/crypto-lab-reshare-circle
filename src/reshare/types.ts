@@ -74,9 +74,11 @@ export interface AdversaryRun {
   /** the loot: for each steal, the share value the attacker walked away with */
   collected: Array<{ epoch: number; party: number; value: bigint }>;
   /**
-   * What the attacker actually feeds the interpolator — their best move: if
-   * any single epoch yielded >= t shares, that group alone; otherwise all of
-   * the loot (which then spans epochs).
+   * What the attacker actually feeds the interpolator — its best move: if any
+   * single epoch yielded >= t shares, that group alone. Otherwise the largest
+   * same-epoch group topped up with one copy of every other custodian, which
+   * is the widest set Lagrange will accept (it divides by x_i − x_j, so one
+   * custodian cannot appear twice) and therefore spans epochs.
    */
   used: Array<{ epoch: number; party: number; value: bigint }>;
   /** Lagrange interpolation of `used` at x = 0 */

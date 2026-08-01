@@ -66,7 +66,7 @@ git clone https://github.com/systemslibrarian/crypto-lab-reshare-circle.git
 cd crypto-lab-reshare-circle
 npm install
 npm run dev        # dev server
-npm test           # 33 unit tests incl. KATs (Vitest)
+npm test           # 35 unit tests incl. KATs (Vitest)
 npm run build      # typecheck + production build
 npm run test:a11y  # axe-core WCAG 2.1 A/AA gate, both themes (Playwright)
 ```
@@ -80,7 +80,7 @@ npm run test:a11y  # axe-core WCAG 2.1 A/AA gate, both themes (Playwright)
 
 ## Build & Verify
 
-- **33 unit tests, all passing** (`npm test`): `src/reuse/reuse.test.ts` (11) pins the consumed modules with KATs — Shamir vectors from shamir-gate's own suite, RFC 3526 group-14 vectors (2048-bit safe prime, Fermat checks, subgroup order) from vss-gate's — and `src/reshare/reshare.test.ts` (22) covers every-subset round-trips, refresh invariants (secret/Y preserved, all shares changed, new shares verify), a fully hand-computed reshare KAT over GF(1019) (shares 47/52/57 → 61/80/99, mixed-epoch garbage exactly 14), exact cheat consequences (+c and Y·g^c), fail-closed duplicate-x and unverified-dealing paths, membership change, and the mobile adversary in all four honesty-critical regimes: cross-epoch thefts with and without resharing, a within-one-epoch quorum that resharing provably cannot stop, best-subset attacker play, and below-threshold futility.
+- **35 unit tests, all passing** (`npm test`): `src/reuse/reuse.test.ts` (11) pins the consumed modules with KATs — Shamir vectors from shamir-gate's own suite, RFC 3526 group-14 vectors (2048-bit safe prime, Fermat checks, subgroup order) from vss-gate's — and `src/reshare/reshare.test.ts` (24) covers every-subset round-trips, refresh invariants (secret/Y preserved, all shares changed, new shares verify), a fully hand-computed reshare KAT over GF(1019) (shares 47/52/57 → 61/80/99, mixed-epoch garbage exactly 14), exact cheat consequences (+c and Y·g^c), fail-closed duplicate-x and unverified-dealing paths, membership change, and the mobile adversary in every honesty-critical regime: cross-epoch thefts with and without resharing, a within-one-epoch quorum that resharing provably cannot stop, best-subset attacker play, below-threshold futility, and re-robbing a custodian — which must cost the attacker nothing it already holds, since only one copy of a custodian can enter a Lagrange interpolation.
 - **Accessibility is gated in CI**: `npm run build && npm run test:a11y` scans the production build with axe-core (WCAG 2.1 A/AA) in both themes after driving every exhibit, and the GitHub Pages deploy is blocked on failure.
 
 ## Performance

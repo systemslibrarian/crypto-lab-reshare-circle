@@ -405,21 +405,46 @@ export async function runMobileAdversary(
     }
   }
 
-  // The attacker's best move: a single epoch that yielded >= t shares is a
-  // clean quorum on one polynomial — interpolate just that. Otherwise the
-  // loot has no usable subset and interpolating all of it is as good (bad)
-  // as anything.
+  // The attacker's best move, computed rather than assumed.
+  //
+  //   1. Group the loot by epoch. Shares stolen inside one epoch all lie on
+  //      that epoch's single polynomial, so the largest such group is the only
+  //      coherent quorum candidate; if it reaches t, that group alone recovers
+  //      the secret and nothing else the attacker holds can improve on it.
+  //   2. If no epoch reached t, nothing recovers the secret, and the attacker
+  //      feeds Lagrange the widest set it CAN: interpolation divides by
+  //      (x_i − x_j), so two copies of the SAME custodian can never both go in.
+  //      Seed with the largest same-epoch group, then top up with one copy of
+  //      each custodian not already represented.
+  //
+  // Collapsing repeat custodians BEFORE the epoch grouping models a strictly
+  // weaker attacker and produces a false verdict: a plan holding A@1, A@5, B@1
+  // and C@1 would keep only the newest copy of A, lose the epoch-1 quorum, and
+  // report "the thefts span epochs; the collection is worthless" about an
+  // attacker who in fact holds A@1, B@1, C@1 and the key. An attacker never
+  // discards a share it already copied — storage is free.
   const byEpoch = new Map<number, AdversaryRun['collected']>();
   for (const c of collected) {
     const group = byEpoch.get(c.epoch) ?? [];
     group.push(c);
     byEpoch.set(c.epoch, group);
   }
-  let bestGroup: AdversaryRun['collected'] | null = null;
+  let bestGroup: AdversaryRun['collected'] = [];
   for (const group of byEpoch.values()) {
-    if (group.length >= t && (!bestGroup || group.length > bestGroup.length)) bestGroup = group;
+    if (group.length > bestGroup.length) bestGroup = group;
   }
-  const used = bestGroup ?? collected;
+  let used: AdversaryRun['collected'];
+  if (bestGroup.length >= t) {
+    used = bestGroup;
+  } else {
+    used = [...bestGroup];
+    const represented = new Set(bestGroup.map((c) => c.party));
+    for (const c of collected) {
+      if (represented.has(c.party)) continue;
+      represented.add(c.party);
+      used.push(c);
+    }
+  }
 
   const reconstructed = reconstruct(
     used.map((c) => ({ x: BigInt(c.party + 1), y: c.value })),

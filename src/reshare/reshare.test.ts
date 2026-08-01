@@ -301,4 +301,36 @@ describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => 
     expect(run.matchesPublicKey).toBe(false);
     expect(run.reconstructed).not.toBe(run.secret);
   });
+
+  it('re-robbing a custodian never costs the attacker an earlier quorum', async () => {
+    // The regression this pins: collapsing repeat custodians to their newest
+    // copy BEFORE grouping by epoch throws away A@1, destroys the epoch-1
+    // quorum, and reports the collection worthless. The attacker keeps every
+    // copy it took, so epoch 1 still holds A, B and C.
+    const run = await runMobileAdversary(true, [
+      { epoch: 1, party: 0 },
+      { epoch: 1, party: 1 },
+      { epoch: 1, party: 2 },
+      { epoch: 5, party: 0 }, // A robbed a second time, four epochs later
+    ], 5);
+    expect(run.collected).toHaveLength(4);
+    expect(run.used).toHaveLength(3);
+    expect(run.used.every((c) => c.epoch === 1)).toBe(true);
+    expect(run.reconstructed).toBe(run.secret);
+    expect(run.matchesPublicKey).toBe(true);
+  });
+
+  it('robbing one custodian every epoch yields one usable point, not five', async () => {
+    // Lagrange divides by (x_i − x_j), so the same custodian cannot be fed in
+    // twice however often it is robbed. The run must resolve this itself
+    // rather than handing duplicate x-coordinates to reconstruct().
+    const run = await runMobileAdversary(
+      true,
+      [1, 2, 3, 4, 5].map((epoch) => ({ epoch, party: 0 })),
+      5,
+    );
+    expect(run.collected).toHaveLength(5);
+    expect(run.used).toHaveLength(1);
+    expect(run.matchesPublicKey).toBe(false);
+  });
 });

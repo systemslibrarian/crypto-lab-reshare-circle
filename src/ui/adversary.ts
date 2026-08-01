@@ -52,13 +52,16 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
   ));
 
   const epochsUsed = new Set(run.used.map((c) => c.epoch));
+  const usedLabels = run.used.map((c) => `${PARTY_LABELS[c.party]}@${c.epoch}`).join(', ');
   const subsetNote =
-    run.used.length !== run.collected.length
-      ? el('p', { class: 'note' }, [
+    run.used.length === run.collected.length
+      ? el('span', {})
+      : el('p', { class: 'note' }, [
           el('strong', { text: 'The attacker plays its best move: ' }),
-          `it interpolates only ${run.used.map((c) => `${PARTY_LABELS[c.party]}@${c.epoch}`).join(', ')} — a full quorum inside one epoch beats everything else it holds.`,
-        ])
-      : el('span', {});
+          epochsUsed.size === 1 && run.used.length >= T
+            ? `it interpolates only ${usedLabels} — a full quorum inside one epoch beats everything else it holds.`
+            : `it interpolates ${usedLabels}. Lagrange divides by (x_i − x_j), so a custodian can only be fed in once no matter how many epochs it was robbed in; the remaining copies are unusable, not merely redundant.`,
+        ]);
 
   let verdict: HTMLElement;
   let explain: string;
@@ -163,19 +166,22 @@ export function adversaryPanel(): HTMLElement {
     ]),
   ]);
 
-  function plannedSteals(): { steals: Steal[]; dropped: number } {
-    const raw = Array.from(grid.querySelectorAll<HTMLInputElement>('input:checked'))
+  // Every box the learner ticked is a theft the attacker carried out. Nothing
+  // is dropped here: an earlier version collapsed repeat custodians to their
+  // newest copy before the run, which quietly rewrote the plan — tick A@1,
+  // A@5, B@1, C@1 and it ran A@5, B@1, C@1, lost the epoch-1 quorum, and
+  // printed "the thefts span epochs; the collection is worthless" about an
+  // attacker holding A@1, B@1, C@1 and therefore the key. Choosing which
+  // subset of the loot to interpolate is the attacker's job, and
+  // runMobileAdversary does it on the real loot.
+  function plannedSteals(): Steal[] {
+    return Array.from(grid.querySelectorAll<HTMLInputElement>('input:checked'))
       .map((box) => ({ party: Number(box.dataset.party), epoch: Number(box.dataset.epoch) }))
-      .sort((a, b) => a.epoch - b.epoch);
-    // A realistic attacker keeps one copy per custodian — the newest. (Two
-    // copies of the same custodian share an x-coordinate and add nothing.)
-    const byParty = new Map<number, Steal>();
-    for (const s of raw) byParty.set(s.party, s);
-    return { steals: [...byParty.values()], dropped: raw.length - byParty.size };
+      .sort((a, b) => a.epoch - b.epoch || a.party - b.party);
   }
 
   async function run(on: boolean): Promise<void> {
-    const { steals, dropped } = plannedSteals();
+    const steals = plannedSteals();
     if (steals.length === 0) {
       status.textContent = 'Plan at least one theft in the grid above.';
       return;
@@ -183,9 +189,6 @@ export function adversaryPanel(): HTMLElement {
     offBtn.disabled = true;
     onBtn.disabled = true;
     status.textContent =
-      (dropped > 0
-        ? `Note: ${dropped} duplicate theft${dropped > 1 ? 's' : ''} of the same custodian dropped — the attacker keeps only the newest copy. `
-        : '') +
       (on
         ? `Running 5 epochs with a full reshare between each (thefts: ${steals.map(stealLabel).join(', ')}) — real dealings, real 2048-bit group…`
         : `Running 5 epochs with the shares left alone (thefts: ${steals.map(stealLabel).join(', ')})…`);

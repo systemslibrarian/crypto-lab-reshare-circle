@@ -150,7 +150,17 @@ export function breakitPanel(session: Session): HTMLElement {
         let verdict: HTMLElement;
         let explain: string;
         if (match) {
-          verdict = chip('ok', '✓', `RECOVERED, BY DESIGN — ${picks.length} same-epoch shares meet the ${T}-of-5 threshold`);
+          // "same-epoch" is read off the picks, not assumed from the match. A
+          // quorum drawn from one epoch is the only way this branch is reached
+          // in practice, but the panel's whole point is that the verdict must
+          // be computed rather than inferred from the crypto result.
+          verdict = chip(
+            'ok',
+            '✓',
+            sameEpoch
+              ? `RECOVERED, BY DESIGN — ${picks.length} shares from epoch ${[...epochsSeen][0]} meet the ${T}-of-5 threshold`
+              : `RECOVERED — and from shares spanning epochs ${[...epochsSeen].sort((a, b) => a - b).join(', ')}, which should be impossible; treat this run as suspect`,
+          );
           explain =
             'In your hands this is the scheme working: an authorized quorum from one epoch reconstructs. In the mobile adversary’s hands (panel 3, resharing off), this same math is the breach — which is why the verdict up there is ALARM even though the crypto says MATCH.';
         } else if (!sameEpoch) {
