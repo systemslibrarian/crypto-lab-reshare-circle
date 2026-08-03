@@ -86,6 +86,29 @@ export function breakitPanel(session: Session): HTMLElement {
           })
         : el('span', {}),
     );
+    // The grid just re-defaulted to a different selection (panel 1 added an
+    // epoch column): any verdict still on screen describes the old ticks.
+    retractVerdict();
+  }
+
+  /**
+   * Retract a standing verdict. Everything this panel prints is a claim about
+   * ONE exact selection, so the instant the selection changes, the verdict on
+   * screen is about shares that are no longer ticked.
+   *
+   * That happens two ways, and the second is the one that bit: the learner
+   * ticks a box, OR panel 1 turns the epoch and `renderGrid` re-defaults this
+   * grid underneath a standing verdict. Reconstructing A@2/B@2/C@2 leaves
+   * "g^v = Y — MATCH" + "RECOVERED, BY DESIGN — 3 shares from epoch 2"; the
+   * next epoch turn silently re-ticks A@1/B@3/C@3, a mixed-epoch selection
+   * that reconstructs to noise — and the MATCH verdict used to keep sitting
+   * over it, telling the learner the exact opposite of what those shares do.
+   */
+  function retractVerdict(): void {
+    if (results.childNodes.length === 0) return;
+    results.replaceChildren();
+    status.textContent =
+      'Selection changed — reconstruct again for a verdict about the shares now ticked.';
   }
 
   function selected(): Pick[] {
@@ -187,6 +210,9 @@ export function breakitPanel(session: Session): HTMLElement {
       }
     })();
   });
+
+  // Delegated on the stable wrapper, so it survives every renderGrid rebuild.
+  gridWrap.addEventListener('change', retractVerdict);
 
   session.onChange.add(renderGrid);
   renderGrid();
