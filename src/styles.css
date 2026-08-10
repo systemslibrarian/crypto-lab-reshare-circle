@@ -1,3 +1,16 @@
+/* Without this, `width: 100%` plus padding is WIDER than its container.
+   `.cl-hero-why` takes `width: 100%` below 640px and carries ~35.6px of padding
+   and border, so under the default `content-box` the hero aside overflows its
+   column and the document scrolls sideways at every phone width, in every
+   state, from first paint (WCAG 1.4.10). The shared `.cl-hero` block is copied
+   into every lab and assumes this reset; the labs that already set it never saw
+   the bug. Measured here before and after. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 /* crypto-lab-reshare-circle — dark default, light via html[data-theme="light"].
    Contrast targets: body text >= 4.5:1, large text & UI components >= 3:1,
    muted text lowers LIGHTNESS (never opacity). State is never color alone. */
