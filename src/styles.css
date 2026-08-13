@@ -13,7 +13,16 @@
 
 /* crypto-lab-reshare-circle — dark default, light via html[data-theme="light"].
    Contrast targets: body text >= 4.5:1, large text & UI components >= 3:1,
-   muted text lowers LIGHTNESS (never opacity). State is never color alone. */
+   muted text lowers LIGHTNESS (never opacity). State is never color alone.
+
+   That "UI components >= 3:1" line was WRONG for two years' worth of buttons,
+   and it is written down here because a comment is not evidence. `--border` is
+   a SURFACE-DIVIDER token — the line between a panel and the page — and `.btn`
+   drew its edge with it while sitting on `.panel`. Measured through the gate's
+   1.4.11 oracle that came to 1.65:1 in dark and 1.68:1 in light against a 3:1
+   floor, in every state, from first paint. `--control-border` below is the
+   token that claim needed; `--border` keeps its 1.65:1 job, which is legitimate
+   because a decorative divider between two surfaces is not a UI component. */
 
 :root {
   --accent: #C2410C;
@@ -21,6 +30,9 @@
   --surface: #201816;
   --surface-2: #2b201c;
   --border: #4d3b32;
+  /* WCAG 1.4.11: measured 3.71:1 against --surface and 3.36:1 against the
+     --surface-2 fill that `.btn` paints underneath it. */
+  --control-border: #857065;
   --text: #f2ebe6;
   --text-dim: #c9b6aa;
   --accent-text: #ffb08a;
@@ -37,6 +49,8 @@ html[data-theme='light'] {
   --surface: #ffffff;
   --surface-2: #f3e9e2;
   --border: #d8c4b7;
+  /* 4.41:1 against --surface (#fff) and 3.72:1 against the --surface-2 fill. */
+  --control-border: #8d7461;
   --text: #241a14;
   --text-dim: #5c4a3e;
   --accent-text: #9a3412;
@@ -145,10 +159,16 @@ body {
   align-items: center;
   margin: 0.7rem 0;
 }
+/* The border is the ONLY thing that delineates a `.btn`: its `--surface-2` fill
+   sits 1.10:1 from the `--surface` panel behind it, so the fill cannot be the
+   boundary and the edge has to carry all of SC 1.4.11 on its own. `.btn-primary`
+   is the other way round — a solid `--accent` fill at 3.37:1 (dark) / 5.17:1
+   (light) against the same panel — which is why it keeps `--accent` as its
+   border and does not need this token. */
 .btn {
   background-color: var(--surface-2);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: 8px;
   padding: 0.5rem 0.9rem;
   cursor: pointer;
