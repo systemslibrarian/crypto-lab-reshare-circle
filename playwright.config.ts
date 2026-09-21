@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4667;
+const PORT = 4207;
 const BASE = '/crypto-lab-reshare-circle/';
 
 export default defineConfig({
