@@ -15,7 +15,9 @@
  *      in dealZeroUpdate / applyReshare / redistribute.
  *   2. An honest update polynomial has constant term exactly 0, so the new
  *      sharing polynomial f'(x) = f(x) + sum(delta_i(x)) satisfies
- *      f'(0) = f(0): every share changes, the secret cannot.
+ *      f'(0) = f(0): the sharing is re-randomized, while the secret cannot
+ *      change. A particular share can retain the same numeric value only in
+ *      the negligible event that the aggregate update evaluates to zero there.
  *   3. Verification is fail-closed and public: a dealing is accepted only if
  *      D_0 is the group identity AND every sub-share passes the Feldman check.
  *      applyReshare refuses (throws) on an unverified-bad dealing unless the
@@ -58,6 +60,66 @@ export { G, P, Q };
 /** Party display labels; x-coordinate of labels[j] is j + 1. */
 export const PARTY_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 
+const MAX_PARTIES = 1024;
+
+function isCommitteeSize(t: number, n: number): boolean {
+  return (
+    Number.isSafeInteger(t) &&
+    Number.isSafeInteger(n) &&
+    t >= 2 &&
+    t <= n &&
+    n <= MAX_PARTIES
+  );
+}
+
+function assertCommitteeSize(t: number, n: number): void {
+  if (!isCommitteeSize(t, n)) {
+    throw new Error(`need safe integer committee sizes with 2 <= t <= n <= ${MAX_PARTIES}`);
+  }
+}
+
+function isCanonicalScalar(value: unknown, q: bigint = Q): value is bigint {
+  return typeof value === 'bigint' && value >= 0n && value < q;
+}
+
+function isSubgroupElement(value: unknown): value is bigint {
+  return (
+    typeof value === 'bigint' &&
+    value > 0n &&
+    value < P &&
+    modPow(value, Q, P) === 1n
+  );
+}
+
+function assertEpochState(state: EpochState): void {
+  if (
+    !state ||
+    !Number.isSafeInteger(state.epoch) ||
+    state.epoch < 1 ||
+    !isCommitteeSize(state.t, state.n) ||
+    !Array.isArray(state.shares) ||
+    state.shares.length !== state.n ||
+    !state.shares.every((share) => isCanonicalScalar(share)) ||
+    !Array.isArray(state.commitments) ||
+    state.commitments.length !== state.t ||
+    !state.commitments.every(isSubgroupElement) ||
+    state.commitments[state.t - 1] === 1n
+  ) {
+    throw new Error('malformed epoch state');
+  }
+
+  for (let j = 0; j < state.n; j++) {
+    if (
+      !verifyFeldmanShare(
+        { participant: j + 1, value: state.shares[j] },
+        state.commitments,
+      ).ok
+    ) {
+      throw new Error(`epoch share ${j + 1} does not match the public commitments`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Setup (a trusted dealer; DKG is a sibling lab, not rebuilt here)
 // ---------------------------------------------------------------------------
@@ -73,15 +135,18 @@ export async function randomSecret(): Promise<bigint> {
  * later epoch must preserve.
  */
 export async function initialDeal(secret: bigint, t: number, n: number): Promise<EpochState> {
-  if (t < 2 || t > n) throw new Error('need 2 <= t <= n');
+  assertCommitteeSize(t, n);
+  if (!isCanonicalScalar(secret)) throw new Error('secret must be a canonical scalar in Z_q');
   const { shares, coefficients } = await generateShares(secret, t, n, Q);
-  return {
+  const state = {
     epoch: 1,
     n,
     t,
     shares: shares.map((s) => s.y),
     commitments: feldmanCommitments(coefficients),
   };
+  assertEpochState(state);
+  return state;
 }
 
 export function publicKey(state: EpochState): bigint {
@@ -107,10 +172,24 @@ export async function dealZeroUpdate(
   n: number,
   opts: { cheatConstant?: bigint; coefficients?: bigint[] } = {},
 ): Promise<ZeroDealing> {
+  assertCommitteeSize(t, n);
+  if (!Number.isSafeInteger(dealer) || dealer < 0 || dealer >= n) {
+    throw new Error('dealer must identify one member of the committee');
+  }
+
   let coefficients: bigint[];
   if (opts.coefficients) {
-    coefficients = opts.coefficients;
+    if (
+      opts.coefficients.length !== t ||
+      !opts.coefficients.every((coefficient) => isCanonicalScalar(coefficient))
+    ) {
+      throw new Error(`update polynomial must contain exactly ${t} canonical Z_q coefficients`);
+    }
+    coefficients = [...opts.coefficients];
   } else {
+    if (opts.cheatConstant !== undefined && typeof opts.cheatConstant !== 'bigint') {
+      throw new Error('cheatConstant must be a bigint');
+    }
     coefficients = [mod(opts.cheatConstant ?? 0n, Q)];
     for (let k = 1; k < t; k++) {
       // Leading coefficient nonzero so the update has degree exactly t-1,
@@ -133,18 +212,31 @@ export async function dealZeroUpdate(
  *     (the Feldman check consumed from vss-gate) — the sub-share really lies
  *     on the committed polynomial.
  */
-export function verifyDealing(dealing: ZeroDealing, n: number): DealingVerdict {
-  const zeroCommitmentOk = dealing.commitments[0] === 1n;
-  const subShareOk = dealing.subShares
-    .slice(0, n)
-    .map(
-      (value, j) => verifyFeldmanShare({ participant: j + 1, value }, dealing.commitments).ok,
-    );
+export function verifyDealing(dealing: ZeroDealing, n: number, t: number): DealingVerdict {
+  const dealer = Number.isSafeInteger(dealing?.dealer) ? dealing.dealer : -1;
+  const structureOk =
+    isCommitteeSize(t, n) &&
+    dealer >= 0 &&
+    dealer < n &&
+    Array.isArray(dealing.commitments) &&
+    dealing.commitments.length === t &&
+    dealing.commitments.every(isSubgroupElement) &&
+    Array.isArray(dealing.subShares) &&
+    dealing.subShares.length === n &&
+    dealing.subShares.every((share) => isCanonicalScalar(share));
+  const zeroCommitmentOk = structureOk && dealing.commitments[0] === 1n;
+  const subShareOk = structureOk
+    ? dealing.subShares.map(
+        (value, j) =>
+          verifyFeldmanShare({ participant: j + 1, value }, dealing.commitments).ok,
+      )
+    : Array.from({ length: isCommitteeSize(t, n) ? n : 0 }, () => false);
   return {
-    dealer: dealing.dealer,
+    dealer,
+    structureOk,
     zeroCommitmentOk,
     subShareOk,
-    ok: zeroCommitmentOk && subShareOk.every(Boolean),
+    ok: structureOk && zeroCommitmentOk && subShareOk.every(Boolean),
   };
 }
 
@@ -158,6 +250,21 @@ export function addSubShares(
   dealings: Array<{ subShares: bigint[] }>,
   q: bigint,
 ): bigint[] {
+  if (typeof q !== 'bigint' || q <= 2n) throw new Error('field modulus must be greater than 2');
+  if (!Array.isArray(shares) || !shares.every((share) => isCanonicalScalar(share, q))) {
+    throw new Error('shares must be canonical field elements');
+  }
+  if (
+    !Array.isArray(dealings) ||
+    dealings.some(
+      (dealing) =>
+        !Array.isArray(dealing?.subShares) ||
+        dealing.subShares.length !== shares.length ||
+        !dealing.subShares.every((share) => isCanonicalScalar(share, q)),
+    )
+  ) {
+    throw new Error('each dealing must contain one canonical sub-share per receiver');
+  }
   return shares.map((share, j) => {
     let next = share;
     for (const d of dealings) {
@@ -173,35 +280,82 @@ export function addSubShares(
  *   C'_k = C_k * prod_i D_{i,k}  (mod p),
  * so C'_0 = C_0 * prod(1) = Y — the public key provably cannot move.
  *
- * Fail-closed: throws if any dealing fails verification, unless
- * `forceUnverified` (the "nobody checked" teaching path) is set.
+ * Fail-closed: throws if any dealing has the wrong shape, repeats a dealer, or
+ * fails either verification check. The deliberately unsafe counterfactual is
+ * exposed under a separate, unmistakable function below rather than as an
+ * option a production caller could set accidentally.
  */
 export function applyReshare(
   state: EpochState,
   dealings: ZeroDealing[],
-  opts: { forceUnverified?: boolean } = {},
 ): EpochState {
-  if (!opts.forceUnverified) {
-    for (const d of dealings) {
-      if (!verifyDealing(d, state.n).ok) {
-        throw new Error(`dealing from party ${d.dealer + 1} failed verification`);
-      }
+  return applyReshareCore(state, dealings, true);
+}
+
+/**
+ * Teaching-only counterfactual used by the "nobody checked" exhibit. It still
+ * enforces canonical lengths and encodings so malformed objects cannot turn a
+ * controlled secret-shift demonstration into an unrelated runtime failure.
+ */
+export function applyUnverifiedReshareForDemo(
+  state: EpochState,
+  dealings: ZeroDealing[],
+): EpochState {
+  return applyReshareCore(state, dealings, false);
+}
+
+function applyReshareCore(
+  state: EpochState,
+  dealings: ZeroDealing[],
+  requireVerification: boolean,
+): EpochState {
+  assertEpochState(state);
+  if (!Array.isArray(dealings) || dealings.length === 0 || dealings.length > state.n) {
+    throw new Error(`reshare needs between 1 and ${state.n} distinct dealings`);
+  }
+
+  const dealers = new Set<number>();
+  for (const dealing of dealings) {
+    const verdict = verifyDealing(dealing, state.n, state.t);
+    if (!verdict.structureOk) {
+      throw new Error(`dealing from party ${verdict.dealer + 1} has malformed protocol data`);
+    }
+    if (dealers.has(dealing.dealer)) {
+      throw new Error(`duplicate dealing from party ${dealing.dealer + 1}`);
+    }
+    dealers.add(dealing.dealer);
+    if (requireVerification && !verdict.ok) {
+      throw new Error(`dealing from party ${dealing.dealer + 1} failed verification`);
     }
   }
-  const commitments = state.commitments.map((c, k) => {
-    let next = c;
+
+  const aggregateUpdate = state.commitments.map((_, k) => {
+    let next = 1n;
     for (const d of dealings) {
       next = mod(next * d.commitments[k], P);
     }
     return next;
   });
-  return {
+  if (aggregateUpdate.slice(1).every((commitment) => commitment === 1n)) {
+    throw new Error('dealings cancel to a zero update; retry instead of advancing an unchanged epoch');
+  }
+
+  const commitments = state.commitments.map(
+    (commitment, k) => mod(commitment * aggregateUpdate[k], P),
+  );
+  if (commitments[state.t - 1] === 1n) {
+    throw new Error('reshare cancelled the leading coefficient; retry to preserve the threshold');
+  }
+
+  const next = {
     epoch: state.epoch + 1,
     n: state.n,
     t: state.t,
     shares: addSubShares(state.shares, dealings, Q),
     commitments,
   };
+  assertEpochState(next);
+  return next;
 }
 
 /** Run one full honest refresh round: every party deals, all verify, apply. */
@@ -212,7 +366,7 @@ export async function refreshEpoch(
   for (let i = 0; i < state.n; i++) {
     dealings.push(await dealZeroUpdate(i, state.t, state.n));
   }
-  const verdicts = dealings.map((d) => verifyDealing(d, state.n));
+  const verdicts = dealings.map((d) => verifyDealing(d, state.n, state.t));
   return { next: applyReshare(state, dealings), dealings, verdicts };
 }
 
@@ -231,8 +385,15 @@ export interface SharePoint {
  * x-coordinates make the Lagrange denominator zero.
  */
 export function reconstruct(points: SharePoint[], q: bigint = Q): bigint {
+  if (typeof q !== 'bigint' || q <= 2n) throw new Error('field modulus must be greater than 2');
+  if (!Array.isArray(points) || points.length === 0) {
+    throw new Error('at least one share point is required');
+  }
   const seen = new Set<string>();
   for (const pt of points) {
+    if (!pt || !isCanonicalScalar(pt.x, q) || pt.x === 0n || !isCanonicalScalar(pt.y, q)) {
+      throw new Error('share points must use nonzero canonical x and canonical y values');
+    }
     const key = pt.x.toString();
     if (seen.has(key)) {
       throw new Error(
@@ -259,6 +420,17 @@ export function matchesPublicKey(candidate: bigint, y: bigint): boolean {
 
 /** Lagrange coefficients lambda_i at x = 0 for the given x-coordinates. */
 export function lagrangeCoeffsAtZero(xs: bigint[], q: bigint): bigint[] {
+  if (typeof q !== 'bigint' || q <= 2n) throw new Error('field modulus must be greater than 2');
+  if (!Array.isArray(xs) || xs.length === 0) throw new Error('at least one x-coordinate is required');
+  const seen = new Set<string>();
+  for (const x of xs) {
+    if (!isCanonicalScalar(x, q) || x === 0n) {
+      throw new Error('x-coordinates must be nonzero canonical field elements');
+    }
+    const key = x.toString();
+    if (seen.has(key)) throw new Error(`duplicate x-coordinate ${key}`);
+    seen.add(key);
+  }
   return xs.map((xi, i) => {
     let num = 1n;
     let den = 1n;
@@ -273,6 +445,16 @@ export function lagrangeCoeffsAtZero(xs: bigint[], q: bigint): bigint[] {
 
 /** Evaluate a commitment vector at x: prod_k C_k^(x^k) — g^(f(x)) publicly. */
 export function commitmentEval(commitments: bigint[], x: bigint): bigint {
+  if (
+    !Array.isArray(commitments) ||
+    commitments.length === 0 ||
+    !commitments.every(isSubgroupElement)
+  ) {
+    throw new Error('commitments must be nonempty canonical subgroup elements');
+  }
+  if (!isCanonicalScalar(x) || x === 0n) {
+    throw new Error('commitment index must be a nonzero canonical field element');
+  }
   let acc = 1n;
   let power = 1n;
   for (const c of commitments) {
@@ -301,8 +483,18 @@ export async function redistribute(
   verdicts: RedistVerdict[];
   lambdas: bigint[];
 }> {
+  assertEpochState(state);
+  assertCommitteeSize(newT, newN);
+  if (!Array.isArray(quorum)) throw new Error('quorum must be an array');
   if (quorum.length !== state.t) throw new Error(`quorum must have exactly t = ${state.t} members`);
-  if (newT < 2 || newT > newN) throw new Error('need 2 <= newT <= newN');
+  const uniqueQuorum = new Set<number>();
+  for (const member of quorum) {
+    if (!Number.isSafeInteger(member) || member < 0 || member >= state.n) {
+      throw new Error('quorum contains a member outside the old committee');
+    }
+    if (uniqueQuorum.has(member)) throw new Error(`quorum repeats member ${member + 1}`);
+    uniqueQuorum.add(member);
+  }
 
   const dealings: RedistDealing[] = [];
   for (const i of quorum) {
@@ -354,8 +546,14 @@ export async function redistribute(
     commitments.push(c);
   }
 
+  if (commitments[newT - 1] === 1n) {
+    throw new Error('redistribution cancelled the leading coefficient; retry to preserve the new threshold');
+  }
+
+  const next = { epoch: state.epoch + 1, n: newN, t: newT, shares, commitments };
+  assertEpochState(next);
   return {
-    next: { epoch: state.epoch + 1, n: newN, t: newT, shares, commitments },
+    next,
     dealings,
     verdicts,
     lambdas,
@@ -381,6 +579,31 @@ export async function runMobileAdversary(
   t = 3,
   n = 5,
 ): Promise<AdversaryRun> {
+  assertCommitteeSize(t, n);
+  if (!Number.isSafeInteger(totalEpochs) || totalEpochs < 1 || totalEpochs > 1000) {
+    throw new Error('totalEpochs must be a safe integer between 1 and 1000');
+  }
+  if (!Array.isArray(steals) || steals.length === 0) {
+    throw new Error('at least one theft must be supplied');
+  }
+  const seenSteals = new Set<string>();
+  for (const steal of steals) {
+    if (
+      !steal ||
+      !Number.isSafeInteger(steal.epoch) ||
+      steal.epoch < 1 ||
+      steal.epoch > totalEpochs ||
+      !Number.isSafeInteger(steal.party) ||
+      steal.party < 0 ||
+      steal.party >= n
+    ) {
+      throw new Error('each theft must name a valid epoch and committee member');
+    }
+    const key = `${steal.epoch}:${steal.party}`;
+    if (seenSteals.has(key)) throw new Error(`duplicate theft ${key}`);
+    seenSteals.add(key);
+  }
+
   const secret = await randomSecret();
   let state = await initialDeal(secret, t, n);
   const y = publicKey(state);
@@ -393,34 +616,36 @@ export async function runMobileAdversary(
       }
     }
     if (epoch < totalEpochs && reshareOn) {
-      // Timeline runs skip per-dealing re-verification for speed; the honest
-      // dealing path is verified exhaustively in refreshEpoch and the tests.
       const dealings: ZeroDealing[] = [];
       for (let i = 0; i < n; i++) {
         dealings.push(await dealZeroUpdate(i, t, n));
       }
-      state = applyReshare(state, dealings, { forceUnverified: true });
+      state = applyReshare(state, dealings);
     } else if (epoch < totalEpochs) {
       state = { ...state, epoch: state.epoch + 1 };
     }
   }
 
-  // The attacker's best move, computed rather than assumed.
+  // Choose the strongest coherent interpolation attempt, computed rather than
+  // assumed.
   //
   //   1. Group the loot by epoch. Shares stolen inside one epoch all lie on
   //      that epoch's single polynomial, so the largest such group is the only
   //      coherent quorum candidate; if it reaches t, that group alone recovers
-  //      the secret and nothing else the attacker holds can improve on it.
+  //      the secret and nothing else the attacker holds is needed.
   //   2. If no epoch reached t, nothing recovers the secret, and the attacker
   //      feeds Lagrange the widest set it CAN: interpolation divides by
   //      (x_i − x_j), so two copies of the SAME custodian can never both go in.
   //      Seed with the largest same-epoch group, then top up with one copy of
-  //      each custodian not already represented.
+  //      each custodian not already represented. This is an illustrative
+  //      cross-epoch attempt, not an exhaustive search for negligible random
+  //      interpolation collisions; the separate public-key check still reports
+  //      the exact result of the attempt.
   //
   // Collapsing repeat custodians BEFORE the epoch grouping models a strictly
   // weaker attacker and produces a false verdict: a plan holding A@1, A@5, B@1
   // and C@1 would keep only the newest copy of A, lose the epoch-1 quorum, and
-  // report "the thefts span epochs; the collection is worthless" about an
+  // report a cross-epoch HELD verdict about an
   // attacker who in fact holds A@1, B@1, C@1 and the key. An attacker never
   // discards a share it already copied — storage is free.
   const byEpoch = new Map<number, AdversaryRun['collected']>();

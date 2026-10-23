@@ -14,7 +14,7 @@ import type { Page } from '@playwright/test';
  * sitting on a `.panel { background: var(--surface) }`, and `--border` is the
  * palette's SURFACE-DIVIDER token — the same one that draws the line between a
  * panel and the page. Measured through this oracle, the eleven buttons'
- * strongest delineator came to 1.65:1 in both themes against a 3:1 floor, and
+ * strongest delineator came to 1.65:1 against a 3:1 floor, and
  * nothing in the gate this replaces looked at a button boundary at all.
  *
  * TWO SEPARATE CHECKS LIVE HERE.

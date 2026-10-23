@@ -45,8 +45,8 @@ export function introPanel(): HTMLElement {
     ]),
     el('p', { class: 'panel-lede' }, [
       'Proactive resharing resets that clock. On a schedule, the custodians jointly scramble their shares into fresh ones — ',
-      el('strong', { text: 'without the secret ever being put back together' }),
-      '. The secret and its public key stay exactly the same, every share changes, and anything stolen in a past epoch stops counting toward the threshold.',
+      el('strong', { text: 'without the protocol putting the secret back together' }),
+      '. The secret and its public key stay exactly the same, the sharing is re-randomized, and shares stolen across different epochs do not combine into a quorum. A complete same-epoch quorum still recovers the secret, which is why secure erasure matters.',
     ]),
     el('p', { class: 'honesty' }, [
       'Everything on this page runs real cryptography in your browser: Shamir sharing over the 2048-bit RFC 3526 group with Feldman-commitment verification, consumed from the ',

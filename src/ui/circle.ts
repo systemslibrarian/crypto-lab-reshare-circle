@@ -1,8 +1,8 @@
 /**
  * Exhibit 1 — the headline: turn the epoch. Runs the real HJKY refresh in the
- * real 2048-bit group, verifies every dealing, then proves the three claims
- * side by side: every share changed, the reconstructed secret is
- * byte-identical, the public key never moved.
+ * real 2048-bit group, verifies every dealing, then shows the refreshed share
+ * vector beside two audit facts: the reconstructed secret is byte-identical
+ * and the public key never moved.
  */
 import {
   G,
@@ -72,14 +72,12 @@ export function circlePanel(session: Session): HTMLElement {
         for (let i = 0; i < dealings.length; i++) {
           status.textContent = `Phase 2 of 3 — verifying (${i + 1}/${prev.n}): everyone checks ${PARTY_LABELS[i]}’s D₀ = 1, and each custodian Feldman-checks its sub-share against ${PARTY_LABELS[i]}’s commitments…`;
           await paint();
-          verdicts.push(verifyDealing(dealings[i], prev.n));
+          verdicts.push(verifyDealing(dealings[i], prev.n, prev.t));
         }
         status.textContent = 'Phase 3 of 3 — applying: each custodian adds its five sub-shares mod q; the public commitments fold as C′ₖ = Cₖ·∏Dₖ…';
         await paint();
-        // Verified one dealer at a time just above (with the verdicts shown
-        // below); skip applyReshare's redundant re-verification pass.
         if (!verdicts.every((v) => v.ok)) throw new Error('a dealing failed verification');
-        const next = applyReshare(prev, dealings, { forceUnverified: true });
+        const next = applyReshare(prev, dealings);
 
         const zeroOk = verdicts.filter((v) => v.zeroCommitmentOk).length;
         const subOk = verdicts.reduce((acc, v) => acc + v.subShareOk.filter(Boolean).length, 0);
@@ -93,6 +91,7 @@ export function circlePanel(session: Session): HTMLElement {
         const newSharesVerify = next.shares.every(
           (s, j) => commitmentEval(next.commitments, BigInt(j + 1)) === modPow(G, s, P),
         );
+        const changedCount = next.shares.filter((share, j) => share !== prev.shares[j]).length;
 
         const compareTable = el('table', { class: 'data-table' }, [
           el('caption', { class: 'sr-only', text: 'Shares before and after the reshare' }),
@@ -105,11 +104,16 @@ export function circlePanel(session: Session): HTMLElement {
             ]),
           ]),
           el('tbody', {}, prev.shares.map((oldShare, j) =>
-            el('tr', {}, [
+            el('tr', { 'data-changed': String(next.shares[j] !== oldShare) }, [
               el('th', { scope: 'row', text: PARTY_LABELS[j] }),
               el('td', {}, [el('code', { text: truncHex(oldShare) })]),
               el('td', {}, [el('code', {}, [el('mark', { text: truncHex(next.shares[j]) })])]),
-              el('td', { text: next.shares[j] !== oldShare ? 'yes — completely new value' : 'NO (unexpected!)' }),
+              el('td', {
+                text:
+                  next.shares[j] !== oldShare
+                    ? 'yes — different value'
+                    : 'no — aggregate update is zero at this point',
+              }),
             ]),
           )),
         ]);
@@ -162,12 +166,12 @@ export function circlePanel(session: Session): HTMLElement {
               hexRow(`Reconstructed from A, B, C — epoch ${prev.epoch}:`, fullHex(recPrev)),
               hexRow(`Reconstructed from A, B, C — epoch ${next.epoch}:`, fullHex(recNext)),
               secretsEqual
-                ? chip('ok', '✓', 'Byte-identical — the shares are new numbers, the secret they encode is not')
+                ? chip('ok', '✓', 'Byte-identical — the sharing was refreshed, the secret it encodes was not')
                 : chip('alarm', '✗', 'MISMATCH — the refresh corrupted the secret (this should be impossible)'),
               el('p', {
                 class: 'note',
                 text:
-                  'The protocol never performs these reconstructions — the secret is never assembled anywhere. This page does it, in tab memory only, to prove to you that the two epochs agree.',
+                  'The refresh protocol never performs these reconstructions. This audit view does reconstruct in tab memory, solely to prove that the two epochs agree.',
               }),
             ]),
             el('div', { class: 'side-card' }, [
@@ -189,7 +193,7 @@ export function circlePanel(session: Session): HTMLElement {
 
         pushEpoch(session, next);
         renderState();
-        status.textContent = `Epoch ${next.epoch} is live. Every share changed; the secret and Y did not. Advance again, or take old shares down to panel 4 and try to mix epochs.`;
+        status.textContent = `Epoch ${next.epoch} is live. ${changedCount}/${next.n} share values changed; the sharing was refreshed and the secret and Y did not move. Advance again, or take old shares down to panel 4 and try to mix epochs.`;
       } finally {
         btn.disabled = false;
       }
@@ -199,7 +203,7 @@ export function circlePanel(session: Session): HTMLElement {
   renderState();
 
   return el('section', { class: 'panel', 'aria-labelledby': 'circle-h' }, [
-    el('h2', { id: 'circle-h', text: '1 · Turn the epoch — same secret, brand-new shares' }),
+    el('h2', { id: 'circle-h', text: '1 · Turn the epoch — same secret, refreshed sharing' }),
     el('p', { class: 'panel-lede' }, [
       'Five custodians hold a 3-of-5 Shamir sharing of a 256-bit secret ',
       el('em', { text: 's' }),

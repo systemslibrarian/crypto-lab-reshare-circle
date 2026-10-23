@@ -187,7 +187,7 @@ export function breakitPanel(session: Session): HTMLElement {
           explain =
             'In your hands this is the scheme working: an authorized quorum from one epoch reconstructs. In the mobile adversary’s hands (panel 3, resharing off), this same math is the breach — which is why the verdict up there is ALARM even though the crypto says MATCH.';
         } else if (!sameEpoch) {
-          verdict = chip('ok', '✓', 'REJECT, NO ALARM — mixed-epoch shares are worthless by algebra, not by policy');
+          verdict = chip('ok', '✓', 'REJECT, NO ALARM — this mixed-epoch interpolation does not match the public key');
           explain =
             `You mixed epochs ${[...epochsSeen].sort((a, b) => a - b).join(' and ')}. Each epoch’s shares lie on a different polynomial; points from different polynomials interpolate to noise. Nothing detected the attack, nothing needed to: the honest failure IS the defense. This is what the attacker’s loot looks like after a reshare.`;
         } else {
