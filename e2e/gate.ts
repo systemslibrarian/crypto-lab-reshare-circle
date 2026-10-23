@@ -836,7 +836,7 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   // `#reshare-compare`, so an unscoped descendant selector matches ten rows.
   await expect(page.locator('#reshare-compare > table.data-table tbody tr')).toHaveCount(5);
   await expect(page.locator('#reshare-compare .chip-ok')).toHaveCount(2);
-  await scanAt('epoch 2 dealt — same secret, five new shares');
+  await scanAt('epoch 2 dealt — same secret, refreshed share vector');
 
   // The dealing matrix: 5 dealers x 5 sub-shares, inside a `.tablewrap`
   // scroller, and the widest thing on the page at 380px.

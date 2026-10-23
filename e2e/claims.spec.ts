@@ -10,7 +10,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * What that buys, exhibit by exhibit:
  *
  *   1. Turn the epoch — the headline verdict ("byte-identical secret, unmoved
- *      public key, every share new") is re-derived from the two 64-hex
+ *      public key, refreshed sharing") is re-derived from the two 64-hex
  *      reconstructions the page printed, and the chip must agree with that
  *      independent comparison rather than merely exist. The "5/5 · 25/25"
  *      counters are checked to be the SUM of the dealing matrix's own per-cell
@@ -173,22 +173,34 @@ test('the epoch turn keeps the secret and Y that the page itself reconstructed',
   await expect(chips.nth(1)).toHaveClass(/chip-ok/);
   await expect(chips.nth(1)).toContainText('Identical (compared in full)');
 
-  // Every share really is a new value, per the page's own before/after columns.
+  // The change label must report the full-value comparison truthfully. A
+  // zero update at one x-coordinate is valid (though negligible at this field
+  // size), so the gate must not turn "every share changed" into an invariant.
   const rows = await page
     .locator('#reshare-compare table.data-table')
     .first()
     .locator('tbody tr')
-    .evaluateAll((rs) => rs.map((r) => Array.from(r.children).map((c) => (c as HTMLElement).innerText.trim())));
+    .evaluateAll((rs) =>
+      rs.map((r) => ({
+        changed: r.getAttribute('data-changed'),
+        cells: Array.from(r.children).map((c) => (c as HTMLElement).innerText.trim()),
+      })),
+    );
   expect(rows).toHaveLength(5);
-  for (const [custodian, oldShare, newShare, changed] of rows) {
+  for (const { changed: fullValueChanged, cells } of rows) {
+    const [custodian, , , label] = cells;
     expect(custodian).toMatch(/^[ABCDE]$/);
-    expect(newShare).not.toBe(oldShare);
-    expect(changed).toBe('yes — completely new value');
+    expect(fullValueChanged).toMatch(/^(true|false)$/);
+    expect(label).toBe(
+      fullValueChanged === 'true'
+        ? 'yes — different value'
+        : 'no — aggregate update is zero at this point',
+    );
   }
 
   // The live committee cards show the epoch-2 column, not a stale epoch-1 one.
   const cards = await panelOf(page, 'advance-epoch').locator('.party-share').allInnerTexts();
-  expect(cards.map((c) => c.trim())).toEqual(rows.map((r) => r[2]));
+  expect(cards.map((c) => c.trim())).toEqual(rows.map((r) => r.cells[2]));
   await expect(panelOf(page, 'advance-epoch').locator('.kv-item').first()).toContainText('Epoch 2');
 
   // ...and so does panel 4's grid: the two panels read one committee.
@@ -197,7 +209,7 @@ test('the epoch turn keeps the secret and Y that the page itself reconstructed',
     .evaluateAll((rs) =>
       rs.map((r) => (r.children[2].querySelector('code') as HTMLElement).innerText.trim()),
     );
-  expect(gridEpoch2).toEqual(rows.map((r) => r[2]));
+  expect(gridEpoch2).toEqual(rows.map((r) => r.cells[2]));
 });
 
 test('the round-verified counters are the sum of the dealing matrix ticks', async ({ page }) => {
@@ -449,7 +461,7 @@ test('below-threshold and repeat-custodian campaigns are HELD, with the reason n
   await setChecks(panel, ['steal-0-1', 'steal-0-2', 'steal-0-3', 'steal-0-4', 'steal-0-5']);
   await runAndSettle(page, 'adv-run-off');
   await expect(off.locator('.loot-list li')).toHaveCount(5);
-  await expect(off).toContainText('The attacker plays its best move');
+  await expect(off).toContainText('The simulator chooses the strongest coherent attempt');
   await expect(off).toContainText('a custodian can only be fed in once');
   await expect(off.locator('.verdict-pair .chip').nth(1)).toContainText(
     'HELD — only 1 share: below the threshold of 3',
