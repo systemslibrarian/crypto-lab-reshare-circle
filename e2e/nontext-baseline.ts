@@ -17,17 +17,16 @@ export const NONTEXT_BASELINE: Record<
   string,
   { ratio: number; required: number; unverified: boolean }
 > = {
-  // What the live oracle finds over {dark, light} x {1280, 380} and all 22
-  // states the drive builds is exactly these two, and BOTH are in the SHARED
+  // What the live oracle finds over the dark-only UI at {1280, 380} and all 22
+  // states the drive builds is exactly this entry, and it is in the SHARED
   // Crypto Lab top bar rather than in anything this lab wrote.
   //
   // `.cl-btn` draws its edge as
   // `1px solid color-mix(in srgb, var(--accent, #35d6bb) 38%, transparent)`
   // over the bar's fixed `#0b1512`. The measured ratio is therefore a FUNCTION
   // OF EACH LAB'S ACCENT, and this lab's is a dark burnt orange (`#C2410C`), so
-  // 38% of it over near-black composites to a very dark edge: 1.45:1, the same
-  // number in BOTH THEMES, because the bar is always dark and the page theme
-  // does not move it. (For scale: a lab that defines no `--accent` at all falls
+  // 38% of it over near-black composites to a very dark edge: 1.45:1. (For
+  // scale: a lab that defines no `--accent` at all falls
   // back to the teal and measures 2.45:1 — still short of 3:1. No value of the
   // token reaches the floor at 38%.)
   //

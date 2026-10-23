@@ -33,6 +33,8 @@ export interface ZeroDealing {
 
 export interface DealingVerdict {
   dealer: number;
+  /** Exact protocol shape and canonical field/group encodings. */
+  structureOk: boolean;
   /** D_0 === 1, i.e. the dealer committed to a zero constant term */
   zeroCommitmentOk: boolean;
   /** Feldman check of each receiver's sub-share against the dealer's commitments */
@@ -74,11 +76,12 @@ export interface AdversaryRun {
   /** the loot: for each steal, the share value the attacker walked away with */
   collected: Array<{ epoch: number; party: number; value: bigint }>;
   /**
-   * What the attacker actually feeds the interpolator — its best move: if any
-   * single epoch yielded >= t shares, that group alone. Otherwise the largest
+   * What the simulator feeds the interpolator: if any single epoch yielded
+   * >= t shares, that guaranteed quorum alone. Otherwise the largest
    * same-epoch group topped up with one copy of every other custodian, which
-   * is the widest set Lagrange will accept (it divides by x_i − x_j, so one
-   * custodian cannot appear twice) and therefore spans epochs.
+   * is the widest illustrative set Lagrange will accept (it divides by
+   * x_i − x_j, so one custodian cannot appear twice) and therefore spans
+   * epochs.
    */
   used: Array<{ epoch: number; party: number; value: bigint }>;
   /** Lagrange interpolation of `used` at x = 0 */

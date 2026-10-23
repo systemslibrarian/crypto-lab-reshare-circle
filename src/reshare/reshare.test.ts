@@ -16,6 +16,7 @@ import {
   Q,
   addSubShares,
   applyReshare,
+  applyUnverifiedReshareForDemo,
   commitmentEval,
   dealZeroUpdate,
   initialDeal,
@@ -79,7 +80,8 @@ describe('zero-constant update dealings', () => {
     const d = await dealZeroUpdate(0, 3, 5);
     expect(d.coefficients[0]).toBe(0n);
     expect(d.commitments[0]).toBe(1n);
-    const verdict = verifyDealing(d, 5);
+    const verdict = verifyDealing(d, 5, 3);
+    expect(verdict.structureOk).toBe(true);
     expect(verdict.zeroCommitmentOk).toBe(true);
     expect(verdict.subShareOk).toEqual([true, true, true, true, true]);
     expect(verdict.ok).toBe(true);
@@ -87,7 +89,7 @@ describe('zero-constant update dealings', () => {
 
   it('cheating dealing (constant term 7): zero-commitment check fails, sub-shares still self-consistent', async () => {
     const d = await dealZeroUpdate(2, 3, 5, { cheatConstant: 7n });
-    const verdict = verifyDealing(d, 5);
+    const verdict = verifyDealing(d, 5, 3);
     expect(verdict.zeroCommitmentOk).toBe(false);
     // The lie is in the constant term, not the sub-shares: each sub-share DOES
     // lie on the committed polynomial. Only the D_0 = 1 check catches it.
@@ -98,15 +100,45 @@ describe('zero-constant update dealings', () => {
   it('tampered sub-share fails the Feldman check for exactly that receiver', async () => {
     const d = await dealZeroUpdate(1, 3, 5);
     d.subShares[3] = mod(d.subShares[3] + 1n, Q);
-    const verdict = verifyDealing(d, 5);
+    const verdict = verifyDealing(d, 5, 3);
     expect(verdict.zeroCommitmentOk).toBe(true);
     expect(verdict.subShareOk).toEqual([true, true, true, false, true]);
     expect(verdict.ok).toBe(false);
   });
+
+  it('rejects a valid higher-degree dealing instead of silently invalidating the advertised threshold', async () => {
+    const state = await initialDeal(SECRET, 3, 5);
+    const degreeThree = await dealZeroUpdate(0, 4, 5, {
+      coefficients: [0n, 2n, 3n, 4n],
+    });
+    const verdict = verifyDealing(degreeThree, 5, 3);
+    expect(verdict.structureOk).toBe(false);
+    expect(verdict.ok).toBe(false);
+    expect(() => applyReshare(state, [degreeThree])).toThrow(/malformed protocol data/);
+  });
+
+  it('rejects truncated, extended, and non-canonical wire arrays', async () => {
+    const d = await dealZeroUpdate(0, 3, 5);
+    const truncated = { ...d, subShares: d.subShares.slice(0, 4) };
+    const extended = { ...d, commitments: [...d.commitments, 1n] };
+    const nonCanonical = { ...d, subShares: [Q, ...d.subShares.slice(1)] };
+
+    for (const malformed of [truncated, extended, nonCanonical]) {
+      const verdict = verifyDealing(malformed, 5, 3);
+      expect(verdict.structureOk).toBe(false);
+      expect(verdict.ok).toBe(false);
+    }
+  });
+
+  it('returns a fail-closed verdict for a missing dealing object', () => {
+    const verdict = verifyDealing(null as unknown as ZeroDealing, 5, 3);
+    expect(verdict).toMatchObject({ dealer: -1, structureOk: false, ok: false });
+    expect(verdict.subShareOk).toEqual([false, false, false, false, false]);
+  });
 });
 
 describe('epoch refresh (HJKY)', () => {
-  it('preserves the secret and the public key, changes every share, and new shares verify', async () => {
+  it('preserves the secret and public key, re-randomizes the sharing, and verifies every new share', async () => {
     const e1 = await initialDeal(SECRET, 3, 5);
     const { next: e2, verdicts } = await refreshEpoch(e1);
 
@@ -116,8 +148,12 @@ describe('epoch refresh (HJKY)', () => {
       expect(reconstruct(points(e2, subset))).toBe(SECRET);
     }
     expect(publicKey(e2)).toBe(publicKey(e1));
+    const changed = e2.shares.filter((share, j) => share !== e1.shares[j]).length;
+    // A nonzero degree-(t-1) update has at most t-1 roots, so at least
+    // n-(t-1) share values must move; requiring all n would be mathematically
+    // false even though a collision is negligible in the real field.
+    expect(changed).toBeGreaterThanOrEqual(e2.n - e2.t + 1);
     for (let j = 0; j < 5; j++) {
-      expect(e2.shares[j]).not.toBe(e1.shares[j]);
       expect(commitmentEval(e2.commitments, BigInt(j + 1))).toBe(modPow(G, e2.shares[j], P));
     }
   });
@@ -130,12 +166,44 @@ describe('epoch refresh (HJKY)', () => {
     expect(() => applyReshare(e1, [...honest, cheat])).toThrow(/failed verification/);
   });
 
+  it('refuses an empty pseudo-refresh and duplicate dealer identities', async () => {
+    const e1 = await initialDeal(SECRET, 3, 5);
+    const dealing = await dealZeroUpdate(0, 3, 5);
+    expect(() => applyReshare(e1, [])).toThrow(/between 1 and 5 distinct dealings/);
+    expect(() => applyReshare(e1, [dealing, dealing])).toThrow(/duplicate dealing/);
+  });
+
+  it('refuses a zero aggregate update instead of advancing an unchanged epoch', async () => {
+    const e1 = await initialDeal(SECRET, 3, 5);
+    const noOp = await dealZeroUpdate(0, 3, 5, { coefficients: [0n, 0n, 0n] });
+    expect(verifyDealing(noOp, 5, 3).ok).toBe(true);
+    expect(() => applyReshare(e1, [noOp])).toThrow(/zero update/);
+
+    const plus = await dealZeroUpdate(0, 3, 5, { coefficients: [0n, 2n, 3n] });
+    const minus = await dealZeroUpdate(1, 3, 5, {
+      coefficients: [0n, Q - 2n, Q - 3n],
+    });
+    expect(() => applyReshare(e1, [plus, minus])).toThrow(/zero update/);
+  });
+
+  it('allows the negligible case where one share receives a zero update', async () => {
+    const e1 = await initialDeal(SECRET, 3, 5);
+    // delta(x) = x(x - 1), so delta(1) = 0 while the sharing still changes.
+    const dealing = await dealZeroUpdate(0, 3, 5, {
+      coefficients: [0n, Q - 1n, 1n],
+    });
+    const e2 = applyReshare(e1, [dealing]);
+    expect(e2.shares[0]).toBe(e1.shares[0]);
+    expect(e2.shares.slice(1)).not.toEqual(e1.shares.slice(1));
+    expect(reconstruct(points(e2, [0, 1, 2]))).toBe(SECRET);
+  });
+
   it('EXACT consequence of an unchecked cheat with constant c=7: secret shifts by exactly 7, public key by exactly g^7', async () => {
     const e1 = await initialDeal(SECRET, 3, 5);
     const dealings = [];
     for (let i = 0; i < 4; i++) dealings.push(await dealZeroUpdate(i, 3, 5));
     dealings.push(await dealZeroUpdate(4, 3, 5, { cheatConstant: 7n }));
-    const e2 = applyReshare(e1, dealings, { forceUnverified: true });
+    const e2 = applyUnverifiedReshareForDemo(e1, dealings);
 
     expect(reconstruct(points(e2, [0, 1, 2]))).toBe(mod(SECRET + 7n, Q));
     expect(publicKey(e2)).toBe(mod(publicKey(e1) * modPow(G, 7n, P), P));
@@ -165,6 +233,12 @@ describe('epoch refresh (HJKY)', () => {
         { x: 3n, y: e2.shares[2] },
       ]),
     ).toThrow(/duplicate x-coordinate/);
+  });
+
+  it('rejects empty and non-canonical reconstruction inputs', () => {
+    expect(() => reconstruct([])).toThrow(/at least one share point/);
+    expect(() => reconstruct([{ x: 0n, y: 1n }])).toThrow(/nonzero canonical x/);
+    expect(() => reconstruct([{ x: 1n, y: Q }])).toThrow(/canonical y/);
   });
 });
 
@@ -242,6 +316,12 @@ describe('membership change: redistribute 3-of-5 to 4-of-7', () => {
     const old = await initialDeal(SECRET, 3, 5);
     await expect(redistribute(old, [0, 1], 4, 7)).rejects.toThrow(/quorum/);
   });
+
+  it('rejects repeated and out-of-range old committee members', async () => {
+    const old = await initialDeal(SECRET, 3, 5);
+    await expect(redistribute(old, [0, 0, 1], 4, 7)).rejects.toThrow(/repeats member/);
+    await expect(redistribute(old, [0, 1, 5], 4, 7)).rejects.toThrow(/outside the old committee/);
+  });
 });
 
 describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => {
@@ -279,7 +359,7 @@ describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => 
     expect(run.matchesPublicKey).toBe(true);
   });
 
-  it('the attacker plays its best subset: a full same-epoch quorum wins even with extra cross-epoch loot', async () => {
+  it('prioritizes a full same-epoch quorum even with extra cross-epoch loot', async () => {
     const mixedPlan = [
       { epoch: 1, party: 3 }, // stray early theft, different polynomial
       { epoch: 4, party: 0 },
@@ -305,7 +385,7 @@ describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => 
   it('re-robbing a custodian never costs the attacker an earlier quorum', async () => {
     // The regression this pins: collapsing repeat custodians to their newest
     // copy BEFORE grouping by epoch throws away A@1, destroys the epoch-1
-    // quorum, and reports the collection worthless. The attacker keeps every
+    // quorum, and reports a cross-epoch HELD result. The attacker keeps every
     // copy it took, so epoch 1 still holds A, B and C.
     const run = await runMobileAdversary(true, [
       { epoch: 1, party: 0 },
@@ -332,5 +412,17 @@ describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => 
     expect(run.collected).toHaveLength(5);
     expect(run.used).toHaveLength(1);
     expect(run.matchesPublicKey).toBe(false);
+  });
+
+  it('rejects malformed campaign coordinates instead of reading outside the committee', async () => {
+    await expect(runMobileAdversary(true, [{ epoch: 0, party: 0 }], 5)).rejects.toThrow(
+      /valid epoch and committee member/,
+    );
+    await expect(runMobileAdversary(true, [{ epoch: 1, party: 5 }], 5)).rejects.toThrow(
+      /valid epoch and committee member/,
+    );
+    await expect(
+      runMobileAdversary(true, [{ epoch: 1, party: 0 }, { epoch: 1, party: 0 }], 5),
+    ).rejects.toThrow(/duplicate theft/);
   });
 });

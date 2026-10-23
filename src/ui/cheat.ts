@@ -8,6 +8,7 @@
 import {
   PARTY_LABELS,
   applyReshare,
+  applyUnverifiedReshareForDemo,
   dealZeroUpdate,
   matchesPublicKey,
   publicKey,
@@ -48,7 +49,7 @@ export function cheatPanel(session: Session): HTMLElement {
             await dealZeroUpdate(i, state.t, state.n, i === CHEATER && cheating ? { cheatConstant: CHEAT_CONSTANT } : {}),
           );
         }
-        const verdicts = dealings.map((d) => verifyDealing(d, state.n));
+        const verdicts = dealings.map((d) => verifyDealing(d, state.n, state.t));
 
         const checkTable = el('div', { class: 'tablewrap', tabindex: '0', role: 'region', 'aria-label': 'Dealing verification results' }, [
           el('table', { class: 'data-table' }, [
@@ -107,7 +108,7 @@ export function cheatPanel(session: Session): HTMLElement {
           );
 
           // Compute-both-sides: the forged-but-accepted world.
-          const forced = applyReshare(state, dealings, { forceUnverified: true });
+          const forced = applyUnverifiedReshareForDemo(state, dealings);
           const recForced = reconstruct([0, 1, 2].map((j) => ({ x: BigInt(j + 1), y: forced.shares[j] })));
           const shift = mod(recForced - session.secret, Q);
 

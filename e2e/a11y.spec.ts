@@ -26,10 +26,9 @@ import {
  * box before its only scan; the 3-of-5 to 4-of-7 rotation; and finally the
  * fully expanded document.
  *
- * Four configurations: {dark, light} x {1280px, 380px}. The gate this replaces
- * ran the light theme at the SAME 1280px viewport as the dark one, so the
- * phone-width column — where all five `.tablewrap` tables are scrolled and the
- * hero aside takes `width: 100%` — had never been scanned in either theme.
+ * Two viewports for the lab's dark-only interface: 1280px and 380px. The
+ * phone-width run covers the column where all five `.tablewrap` tables are
+ * scrolled and the hero aside takes `width: 100%`.
  *
  * See `gate.ts` for why nothing is injected into the page, why no `<details>`
  * is opened from script, why the lab's defaults are asserted rather than

@@ -330,7 +330,7 @@ export function mechanismPanel(): HTMLElement {
     el('p', {
       class: 'panel-lede',
       text:
-        'Why does adding random polynomials change every share but never the secret? Because every update is pinned to zero at x = 0. Step through it — the plot and the table show the same numbers.',
+        'Why do the displayed shares move while the secret does not? Because every update is pinned to zero at x = 0. Step through it — the plot and the table show the same numbers.',
     }),
     el('p', {
       class: 'honesty',
