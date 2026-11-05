@@ -426,3 +426,90 @@ describe('the mobile adversary (steal A@1, B@3, C@5 over 5 epochs, t=3)', () => 
     ).rejects.toThrow(/duplicate theft/);
   });
 });
+
+describe('assertEpochState rejects the malformed states it is there for', () => {
+  /**
+   * `publicKey`, `applyReshare` and `reconstruct` all run `assertEpochState`
+   * first. Three of its checks had no test: dropping the subgroup membership
+   * test, the degree test, or the `t >= 2` bound each left all 44 tests green.
+   * These are the hostile shapes those three checks exist to refuse.
+   */
+  const valid = async () => initialDeal(SECRET, 3, 5);
+
+  // `publicKey` does NOT validate — only `applyReshareCore` (reached through
+  // `applyReshare` / `applyUnverifiedReshareForDemo`) and `redistribute` do.
+  // Checked rather than assumed: the first version of these tests called
+  // `publicKey` and nothing threw.
+  const reshare = async (state: EpochState) => redistribute(state, [1, 2, 3], state.t, state.n);
+
+  it('accepts the state a real deal produces', async () => {
+    const state = await valid();
+    await expect(reshare(state)).resolves.toBeDefined();
+  });
+
+  it('refuses a commitment outside the order-Q subgroup', async () => {
+    const state = await valid();
+    // 2 is a unit mod P but not in the subgroup of order Q, so 2^Q != 1. A
+    // commitment there is not a g-power and Feldman verification is meaningless
+    // against it.
+    // Find an actual non-member rather than assuming one: with P = 2Q + 1 the
+    // order-Q subgroup is the quadratic residues, and which small integers land
+    // in it depends on P. (2 is a member here, which is why this is derived.)
+    let outside = 2n;
+    while (modPow(outside, Q, P) === 1n) outside += 1n;
+    expect(modPow(outside, Q, P)).not.toBe(1n);
+    const tampered = { ...state, commitments: [...state.commitments] };
+    tampered.commitments[1] = outside;
+    await expect(reshare(tampered)).rejects.toThrow(/malformed epoch state/);
+  });
+
+  it('refuses a commitment of zero or P, which are in no subgroup', async () => {
+    const state = await valid();
+    for (const bad of [0n, P, P + 1n]) {
+      const tampered = { ...state, commitments: [...state.commitments] };
+      tampered.commitments[1] = bad;
+      await expect(reshare(tampered), String(bad)).rejects.toThrow(/malformed epoch state/);
+    }
+  });
+
+  it('refuses a top commitment of 1, which claims a degree it does not have', async () => {
+    const state = await valid();
+    // g^0 = 1 as the leading commitment means the degree-(t-1) coefficient is
+    // zero, so the polynomial is of lower degree than t-1 and t shares no
+    // longer determine it. 1 IS in the subgroup, so only the explicit check
+    // catches this.
+    expect(modPow(1n, Q, P)).toBe(1n);
+    const tampered = { ...state, commitments: [...state.commitments] };
+    tampered.commitments[state.t - 1] = 1n;
+    await expect(reshare(tampered)).rejects.toThrow(/malformed epoch state/);
+  });
+
+  // NOT guarded, and recorded rather than contrived: `t >= 2`, `t <= n` and the
+  // safe-integer bounds inside `isCommitteeSize` are over-determined for any
+  // state reachable through this API, because `assertEpochState` also requires
+  // `commitments.length === t` and `shares.length === n` and verifies every
+  // share against the commitments. A tampered `t` is therefore refused by a
+  // length clause whether or not the bound is present, so a test cannot tell
+  // which clause did it. Dropping each bound leaves the suite green, and a test
+  // written to look like it isolated one would be asserting nothing. Same for
+  // `value > 0n` in `isSubgroupElement`: 0^Q mod P is 0, so the subgroup test
+  // already refuses zero.
+  it("refuses the STATE's own committee sizes when they are not a sharing", async () => {
+    const state = await valid();
+    // The target sizes stay valid (3-of-5) so this exercises assertEpochState
+    // rather than the argument check `assertCommitteeSize(newT, newN)`, which
+    // raises a different error. The first version of this test passed for that
+    // wrong reason — the sizes were being rejected as ARGUMENTS.
+    const asState = async (patch: Partial<EpochState>) =>
+      redistribute({ ...state, ...patch }, [1, 2, 3], 3, 5);
+
+    // t = 1 is a "threshold" any single holder meets alone; t = 0 leaves the
+    // commitment vector empty. Neither is a sharing. t > n cannot be met at
+    // all, and a fractional n is not a committee.
+    for (const patch of [{ t: 1 }, { t: 0 }, { t: -1 }, { t: state.n + 1 }, { n: 2.5 }]) {
+      await expect(asState(patch), JSON.stringify(patch)).rejects.toThrow(
+        /malformed epoch state|committee sizes/,
+      );
+    }
+  });
+});
