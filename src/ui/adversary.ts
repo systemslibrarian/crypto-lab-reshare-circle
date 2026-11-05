@@ -36,7 +36,7 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
       items.push(
         el('span', { class: 'epoch-note' }, [
           run.reshareOn
-            ? ' · then the committee reshares: every share replaced'
+            ? ' · then the committee re-randomizes its sharing'
             : ' · no reshare: every share stays put',
         ]),
       );
@@ -57,7 +57,7 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
     run.used.length === run.collected.length
       ? el('span', {})
       : el('p', { class: 'note' }, [
-          el('strong', { text: 'The attacker plays its best move: ' }),
+          el('strong', { text: 'The simulator chooses the strongest coherent attempt: ' }),
           epochsUsed.size === 1 && run.used.length >= T
             ? `it interpolates only ${usedLabels} — a full quorum inside one epoch beats everything else it holds.`
             : `it interpolates ${usedLabels}. Lagrange divides by (x_i − x_j), so a custodian can only be fed in once no matter how many epochs it was robbed in; the remaining copies are unusable, not merely redundant.`,
@@ -66,10 +66,14 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
   let verdict: HTMLElement;
   let explain: string;
   if (run.matchesPublicKey) {
-    if (run.reshareOn) {
+    if (run.reshareOn && epochsUsed.size === 1) {
       verdict = chip('alarm', '✗', `BREACH — ${run.used.length} thefts landed inside epoch ${[...epochsUsed][0]}`);
       explain =
         'The honest limit, computed: resharing resets the clock BETWEEN epochs. It cannot beat a quorum assembled within one epoch — those shares all lie on that epoch’s single polynomial, and refreshing afterwards revokes nothing that already happened.';
+    } else if (run.reshareOn) {
+      verdict = chip('alarm', '✗', 'BREACH — this cross-epoch interpolation happened to match the public key');
+      explain =
+        'This is not a guaranteed cross-epoch attack: independently refreshed shares do not form a quorum. The randomly interpolated candidate hit the secret by negligible chance, and the public-key check detected that exceptional result honestly.';
     } else {
       verdict = chip('alarm', '✗', 'BREACH — patient, never-simultaneous thefts defeated the threshold');
       explain =
@@ -80,9 +84,9 @@ function renderRun(run: AdversaryRun): HTMLElement[] {
     explain =
       'Below the threshold nothing reconstructs, reshared or not — that guarantee is plain Shamir (see shamir-gate). Resharing exists for the attacker patient enough to reach t.';
   } else {
-    verdict = chip('ok', '✓', 'HELD — the thefts span epochs; the collection is worthless');
+    verdict = chip('ok', '✓', 'HELD — the thefts span epochs; no same-epoch quorum exists');
     explain =
-      `The loot spans epochs ${[...epochsUsed].sort((a, b) => a - b).join(', ')} and no single epoch reached the threshold — points from different polynomials that agree nowhere the attacker can use. Not “revoked”, not “detected”: just algebraically unrelated to the secret.`;
+      `The loot spans epochs ${[...epochsUsed].sort((a, b) => a - b).join(', ')} and no single epoch reached the threshold. This cross-epoch interpolation does not match Y; under the proactive model, fewer than t shares from each independently refreshed epoch reveal no usable quorum.`;
   }
 
   return [
@@ -170,7 +174,7 @@ export function adversaryPanel(): HTMLElement {
   // is dropped here: an earlier version collapsed repeat custodians to their
   // newest copy before the run, which quietly rewrote the plan — tick A@1,
   // A@5, B@1, C@1 and it ran A@5, B@1, C@1, lost the epoch-1 quorum, and
-  // printed "the thefts span epochs; the collection is worthless" about an
+  // printed a cross-epoch HELD verdict about an
   // attacker holding A@1, B@1, C@1 and therefore the key. Choosing which
   // subset of the loot to interpolate is the attacker's job, and
   // runMobileAdversary does it on the real loot.

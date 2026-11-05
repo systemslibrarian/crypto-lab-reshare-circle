@@ -15,7 +15,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Interactive proactive secret sharing (HJKY 1995) demo: Shamir shares refreshed into a new epoch with Feldman-verified zero-constant polynomials — the public key unchanged, the secret never reconstructed, every old share worthless."
+      content="Interactive proactive secret sharing (HJKY 1995) demo: Feldman-verified zero-constant updates re-randomize Shamir shares across epochs while preserving the secret and public key."
     />
     <link rel="icon" type="image/svg+xml"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>" />
@@ -143,11 +143,11 @@
         <div class="cl-hero-main">
           <h1 class="cl-hero-title">Reshare Circle</h1>
           <p class="cl-hero-sub">Proactive secret sharing · epoch resharing</p>
-          <p class="cl-hero-desc">Runs the real HJKY’95 refresh — every party deals a Feldman-verified zero-constant polynomial — so you can watch all five shares change while the secret and its public key stay byte-identical, then mix epochs yourself and get garbage.</p>
+          <p class="cl-hero-desc">Runs the real HJKY’95 refresh — every party deals a Feldman-verified zero-constant polynomial — so you can inspect the refreshed sharing while the secret and its public key stay byte-identical, then mix epochs and verify the result against the public key.</p>
         </div>
         <aside class="cl-hero-why" aria-label="Why it matters">
           <span class="cl-hero-why-label">WHY IT MATTERS</span>
-          <p class="cl-hero-why-text">A threshold key can live for decades, and an attacker doesn’t need t shares at once — one custodian this year, another the next, until the quorum is quietly theirs. Proactive resharing resets that clock every epoch, so partial loot expires before it adds up. It is how long-lived custody survives slow, patient compromise.</p>
+          <p class="cl-hero-why-text">A threshold key can live for decades, and an attacker doesn’t need t shares at once — one custodian this year, another the next, until the quorum is quietly theirs. Proactive resharing resets that clock every epoch, so partial shares from different epochs cannot be pooled, provided old shares are securely erased.</p>
         </aside>
       </header>
     </div>
