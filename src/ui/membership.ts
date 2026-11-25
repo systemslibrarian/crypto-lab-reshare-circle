@@ -32,12 +32,14 @@ export function membershipPanel(session: Session): HTMLElement {
       await paint();
       try {
         const old = latest(session);
-        const { next, verdicts } = await redistribute(old, [0, 1, 2], 4, 7);
+        const oldQuorum = [0, 1, 2];
+        const { next, verdicts } = await redistribute(old, oldQuorum, 4, 7);
 
         const constOk = verdicts.filter((v) => v.constantTermOk).length;
         const subOk = verdicts.reduce((acc, v) => acc + v.subShareOk.filter(Boolean).length, 0);
 
         const recNew = reconstruct([0, 1, 2, 3].map((j) => ({ x: BigInt(j + 1), y: next.shares[j] })));
+        const recOld = reconstruct(oldQuorum.map((j) => ({ x: BigInt(j + 1), y: old.shares[j] })));
         const below = reconstruct([0, 1, 2].map((j) => ({ x: BigInt(j + 1), y: next.shares[j] })));
         const pkSame = publicKey(next) === publicKey(old);
 
@@ -55,10 +57,10 @@ export function membershipPanel(session: Session): HTMLElement {
           el('div', { class: 'sides' }, [
             el('div', { class: 'side-card' }, [
               el('h3', { text: 'Same key' }),
-              hexRow('Any 4 of the 7 new shares reconstruct:', fullHex(recNew)),
-              hexRow('The secret the old committee held:', fullHex(session.secret)),
-              recNew === session.secret
-                ? chip('ok', '✓', 'Byte-identical — seven strangers now guard the same secret')
+              hexRow('Four new shares (P1–P4) reconstruct:', fullHex(recNew)),
+              hexRow(`Three retained shares from old epoch ${old.epoch} (A, B, C) still reconstruct:`, fullHex(recOld)),
+              recNew === recOld && recOld === session.secret
+                ? chip('ok', '✓', 'Byte-identical — both quorums recovered the original secret')
                 : chip('alarm', '✗', 'MISMATCH — redistribution corrupted the secret'),
               pkSame
                 ? chip('ok', '✓', 'Public key unchanged: C′₀ = ∏ (g^(sᵢ))^(λᵢ) = g^s = Y')
@@ -76,19 +78,19 @@ export function membershipPanel(session: Session): HTMLElement {
                 matchesPublicKey(below, publicKey(next)) ? '✓' : '✗',
                 matchesPublicKey(below, publicKey(next))
                   ? 'g^v = Y — MATCH (unexpected!)'
-                  : 'g^v ≠ Y — NO MATCH: three shares are no longer a quorum',
+                  : 'g^v ≠ Y — NO MATCH: three new shares are below the new threshold',
               ),
               el('p', {
                 class: 'note',
                 text:
-                  'The threshold rode along with the reshare: the new polynomial has degree 3, so it takes 4 points to pin it down. Growing the committee and raising the bar happened in the same move, without the secret ever existing in one place.',
+                  'The new polynomial has degree 3, so four new points determine it. Redistribution uses shares throughout. This audit reconstructs the secret afterward to compare the two committees.',
               }),
             ]),
           ]),
           el('p', {
             class: 'note',
             text:
-              'This panel forks the timeline: the 5-party committee in panels 1 and 4 keeps its own history. In production this IS the retirement ceremony — the old custodians erase their shares afterward, and the new seven never saw them.',
+              'This demo keeps the old shares for comparison. In a deployment, retiring the old committee requires secure erasure. Anyone who already kept a quorum from one old epoch can still reconstruct this same secret.',
           }),
         );
         status.textContent = 'Redistribution complete: same secret, same public key, seven new custodians, threshold now 4.';
@@ -103,7 +105,7 @@ export function membershipPanel(session: Session): HTMLElement {
     el('p', { class: 'panel-lede' }, [
       'Real custody does not keep the same five operators forever. Redistribution is resharing with new coordinates: a quorum of three old custodians each deal ',
       el('em', { text: 'their share' }),
-      ' into a fresh polynomial for the incoming committee, and the incoming committee combines what it receives with public Lagrange weights. Same secret, new people, new threshold — and the old committee’s shares become one more expired epoch.',
+      ' into a fresh polynomial for the incoming committee, which combines the contributions with public Lagrange weights. Compare four new shares with three retained shares from the same old epoch. Both quorums reconstruct the same secret.',
     ]),
     el('div', { class: 'seal-row' }, [runBtn]),
     status,

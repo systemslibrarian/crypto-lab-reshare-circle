@@ -258,7 +258,7 @@ export function mechanismPanel(): HTMLElement {
             `A₂ and B₂ (both epoch 2) interpolate to ${both2} — the secret, intact ✓`,
           ]),
           el('li', {}, [
-            `B₁ and C₁ (both epoch 1) interpolate to ${both1} — old quorums still worked, until the old shares were erased ✓`,
+            `B₁ and C₁ (both epoch 1) interpolate to ${both1} — a retained old quorum still works ✓`,
           ]),
           el('li', {}, [
             `A₁ and B₂ (one from each epoch) interpolate to ${mixed} — not ${secret}, not anything: two points from two different lines ✗`,

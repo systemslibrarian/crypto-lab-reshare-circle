@@ -16,7 +16,7 @@ The primitives are real and **consumed from sibling labs, not reimplemented**:
 - **RFC 3526 group 14** (2048-bit safe prime, order-q subgroup, g = 4) and **Feldman VSS commitments/verification** — copied verbatim from [crypto-lab-vss-gate](https://github.com/systemslibrarian/crypto-lab-vss-gate) (`src/reuse/vss.ts`, with `export` added to three originally-private helpers).
 - The **HJKY resharing layer** on top (`src/reshare/reshare.ts`) is this lab's own hand-rolled, inspectable teaching code.
 
-**What's real vs simulated:** all field and group arithmetic, all dealings, all Feldman checks, and all audit-view reconstructions run genuinely in your browser (BigInt, `crypto.getRandomValues`). The refresh protocol itself never reconstructs the secret, but this teaching page deliberately does so in tab memory to compare epochs. What's simulated is the *world around* the committee: all five parties live in one browser tab, so private channels, broadcast, epoch clocks and erasure are trivially honest. Panel 2's step-through additionally runs the identical equations over a small labelled field, GF(1019), purely so the numbers fit on screen.
+**What's real vs simulated:** all field and group arithmetic, all dealings, all Feldman checks, and all audit-view reconstructions run genuinely in your browser (BigInt, `crypto.getRandomValues`). The refresh protocol itself never reconstructs the secret, but this teaching page deliberately does so in tab memory to compare epochs. What's simulated is the *world around* the committee: all five parties live in one browser tab, so private channels, broadcast and epoch clocks are simulated. The tab retains old shares for comparison. Panel 2's step-through additionally runs the identical equations over a small labelled field, GF(1019), purely so the numbers fit on screen.
 
 **What it does NOT prove:** that proactive resharing survives a real network (no asynchrony, no Byzantine agreement, no complaint rounds are modeled); that erasure happens (the guarantee collapses if old shares aren't destroyed); or that a breach reaching *t* shares *within one epoch* can be undone — it can't. Feldman commitments reveal g^(a_k), so share secrecy here is computational (discrete log), not information-theoretic.
 
@@ -29,7 +29,7 @@ The primitives are real and **consumed from sibling labs, not reimplemented**:
 3. **The mobile adversary** — plan the theft campaign yourself in a custodian × epoch grid (default: A@1, B@3, C@5), then run five epochs with and without resharing. Without: the loot interpolates to the private scalar and **g^v = Y says MATCH — rendered as BREACH**, because the verdict and the math are separate indicators. With: cross-epoch interpolation is checked against Y and, absent a same-epoch quorum, is overwhelmingly likely not to match. The simulator prioritizes any complete same-epoch quorum — so putting all three thefts inside one epoch defeats resharing, and the demo says so honestly instead of pretending otherwise.
 4. **Break it yourself** — a checkbox grid of every share from every epoch this page has produced. Pick any three, hit reconstruct: real Lagrange, real public-key check, no guard rails. Mixed epochs are expected not to match Y; a same-epoch quorum recovers by design; duplicate custodians fail closed with the division-by-zero explanation.
 5. **The dealer who lies** — make party C deal δ(0) = 7 instead of 0. Its sub-shares all pass the Feldman check (they honestly match the committed polynomial!) and only the D₀ = 1 check catches the lie. The "if nobody checked" counterfactual is computed, not asserted: the secret shifts by exactly +7 and the public key silently becomes Y·g⁷ — the forged-but-accepted ALARM state.
-6. **Rotate the committee** — redistribute 3-of-5 into 4-of-7: a quorum of three old custodians deal their *shares* (never the secret) into fresh degree-3 polynomials; the new seven verify each D₀ against the old public commitments and combine with public Lagrange weights. Same secret, same Y, new people, new threshold.
+6. **Rotate the committee** — redistribute 3-of-5 into 4-of-7: a quorum of three old custodians deal their *shares* (never the secret) into fresh degree-3 polynomials; the new seven verify each D₀ against the old public commitments and combine with public Lagrange weights. The audit reconstructs the same secret from four new shares and, separately, from three retained shares of one old epoch. The public key stays the same. Retiring the old committee requires secure erasure.
 
 ## When to Use It
 
@@ -66,7 +66,7 @@ git clone https://github.com/systemslibrarian/crypto-lab-reshare-circle.git
 cd crypto-lab-reshare-circle
 npm install
 npm run dev        # dev server
-npm test           # 44 unit tests incl. KATs (Vitest)
+npm test           # 49 unit tests incl. KATs (Vitest)
 npm run build      # typecheck + production build
 npm run test:a11y  # browser behavior + axe-core WCAG 2.1 A/AA gate (Playwright)
 ```
@@ -80,7 +80,7 @@ npm run test:a11y  # browser behavior + axe-core WCAG 2.1 A/AA gate (Playwright)
 
 ## Build & Verify
 
-- **44 unit tests, all passing** (`npm test`): `src/reuse/reuse.test.ts` (11) pins the consumed modules with KATs — Shamir vectors from shamir-gate's own suite, RFC 3526 group-14 vectors (2048-bit safe prime, Fermat checks, subgroup order) from vss-gate's — and `src/reshare/reshare.test.ts` (33) covers every-subset round-trips, refresh invariants, exact wire shapes and threshold degree, zero-update rejection, the valid single-share collision case, a fully hand-computed reshare KAT over GF(1019), exact cheat consequences (+c and Y·g^c), fail-closed malformed/duplicate/non-canonical inputs, membership change, and the mobile adversary in every honesty-critical regime.
+- **49 unit tests, all passing** (`npm test`): `src/reuse/reuse.test.ts` (11) pins the consumed modules with KATs — Shamir vectors from shamir-gate's own suite, RFC 3526 group-14 vectors (2048-bit safe prime, Fermat checks, subgroup order) from vss-gate's — and `src/reshare/reshare.test.ts` (38) covers every-subset round-trips, refresh invariants, exact wire shapes and threshold degree, zero-update rejection, the valid single-share collision case, a fully hand-computed reshare KAT over GF(1019), exact cheat consequences (+c and Y·g^c), fail-closed malformed/duplicate/non-canonical inputs, membership change, and the mobile adversary in every honesty-critical regime.
 - **Workflow policy has 7 executable controls** (`npm run test:workflow-controls`): repository code gets read-only permissions, publishing authority stays in no-checkout jobs, pull requests retain no Pages bundle, Node 22/24/26 all run unit/build controls, browser tests gate publishing and dependency merges, main deploys cannot be cancelled midway, and only gated patch/minor Dependabot updates can auto-merge.
 - **Browser behavior and accessibility are gated in CI**: `npm run test:a11y` scans the production build with axe-core (WCAG 2.1 A/AA) after driving every exhibit, and the GitHub Pages deploy is blocked on failure.
 

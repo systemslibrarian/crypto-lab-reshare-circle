@@ -694,6 +694,10 @@ test('redistribution moves the same secret to a 4-of-7 committee and raises the 
 
   // Same secret, verified against the page's own two prints of it.
   const [recNew, oldSecret] = await hexRows(page, 'membership-result');
+  await expect(result.locator('.hexrow-label')).toHaveText([
+    'Four new shares (P1–P4) reconstruct:',
+    'Three retained shares from old epoch 1 (A, B, C) still reconstruct:',
+  ]);
   expect(recNew).toMatch(SECRET_HEX);
   expect(recNew).toBe(oldSecret);
   const chips = result.locator('.chip');
@@ -703,7 +707,7 @@ test('redistribution moves the same secret to a 4-of-7 committee and raises the 
   await expect(chips.nth(1)).toContainText('Public key unchanged');
 
   // The new threshold is enforced: three shares no longer reach it.
-  await expect(chips.nth(2)).toContainText('g^v ≠ Y — NO MATCH: three shares are no longer a quorum');
+  await expect(chips.nth(2)).toContainText('g^v ≠ Y — NO MATCH: three new shares are below the new threshold');
   expect(await statusOf(page, 'membership-run')).toContain('threshold now 4');
 });
 
@@ -716,6 +720,7 @@ test('the same 256-bit secret is the one every exhibit reports', async ({ page }
 
   await runAndSettle(page, 'membership-run');
   const [fromNewCommittee, oldSecret] = await hexRows(page, 'membership-result');
+  await expect(page.locator('#membership-result .hexrow-label').nth(1)).toContainText('old epoch 2');
 
   await page.locator('#cheat-toggle').check();
   await runAndSettle(page, 'cheat-run');
